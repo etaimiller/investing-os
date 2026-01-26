@@ -10,7 +10,18 @@ The `investos` CLI is the primary interface to the Investment OS. It provides a 
 
 **Requirements**: Python 3.7+
 
-The CLI uses Python's standard library only - no external dependencies required.
+**Dependencies**:
+- **Core CLI** (Step 3): Python stdlib only
+- **PDF Ingestion** (Step 4): PyMuPDF for PDF text extraction
+
+**Installation**:
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Or install manually
+pip install PyMuPDF>=1.23.0
+```
 
 **From repository root**:
 ```bash
@@ -25,13 +36,16 @@ export PATH="$PATH:$(pwd)/bin"
 investos --help
 ```
 
-**Optional: Use virtual environment**:
+**Recommended: Use virtual environment**:
 ```bash
-# Create venv (optional but recommended)
+# Create venv (recommended)
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# CLI still works the same way
+# Install dependencies
+pip install -r requirements.txt
+
+# CLI now has full functionality
 ./bin/investos --help
 ```
 
@@ -92,6 +106,36 @@ Create research dossier:
 # Creates: research/AAPL/dossier.md
 #          research/AAPL/README.md
 ```
+
+#### `investos ingest`
+Ingest Trade Republic portfolio PDF:
+```bash
+./bin/investos ingest --pdf /path/to/trade_republic_portfolio.pdf --account main
+
+# Without account name (defaults to "unknown")
+./bin/investos ingest --pdf ~/Downloads/portfolio.pdf
+
+# Skip CSV export
+./bin/investos ingest --pdf portfolio.pdf --account retirement --no-csv
+```
+
+**What it does**:
+1. Copies PDF to `portfolio/raw/` with proper naming convention
+2. Extracts holdings data from PDF (name, ISIN, quantity, prices, values)
+3. Creates canonical JSON snapshot in `portfolio/snapshots/`
+4. Updates `portfolio/latest.json` pointer
+5. Generates convenience CSV export in `portfolio/exports/` (unless --no-csv)
+6. Writes structured run log
+
+**Trade Republic PDF format expected**:
+- Holdings table with: Name, ISIN, Quantity, Average Buy Price, Current Price, Current Value
+- Cash position (optional)
+- Digital PDF (not scanned - OCR not yet supported)
+
+**Handling missing data**:
+- Missing fields are set to null with warnings
+- Incomplete data is logged but doesn't fail ingestion
+- All warnings appear in snapshot metadata and run log
 
 ### Structured Logging
 

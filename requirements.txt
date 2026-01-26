@@ -1,0 +1,10 @@
+# Investment OS Requirements
+#
+# Minimal dependencies for Investment OS functionality.
+# Uses stdlib where possible.
+
+# PDF text extraction (Step 4: Portfolio ingestion)
+PyMuPDF==1.23.8  # Also known as fitz - for Trade Republic PDF parsing
+
+# Future dependencies (add as needed):
+# jsonschema>=4.0.0  # JSON Schema Draft-07 validation (Step 4/5)

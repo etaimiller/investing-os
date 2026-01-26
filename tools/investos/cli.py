@@ -30,6 +30,7 @@ from .scaffold import (
     scaffold_valuation_input,
     scaffold_research_dossier
 )
+from .ingest import ingest_pdf, IngestError
 
 
 def cmd_status(args, repo_root: Path, config, logger) -> int:
@@ -214,6 +215,77 @@ def cmd_scaffold_dossier(args, repo_root: Path, config, logger) -> int:
     return 0
 
 
+def cmd_ingest(args, repo_root: Path, config, logger) -> int:
+    """Ingest Trade Republic PDF"""
+    pdf_path = Path(args.pdf)
+    account_name = args.account if hasattr(args, 'account') and args.account else 'unknown'
+    export_csv = not args.no_csv if hasattr(args, 'no_csv') else True
+    
+    # Make path absolute if needed
+    if not pdf_path.is_absolute():
+        pdf_path = Path.cwd() / pdf_path
+    
+    print(f"Ingesting Trade Republic PDF...")
+    print(f"  Source: {pdf_path}")
+    print(f"  Account: {account_name}")
+    print()
+    
+    try:
+        result = ingest_pdf(pdf_path, repo_root, config, account_name, export_csv)
+        
+        # Log paths
+        if result.get('raw_pdf_path'):
+            logger.add_path(result['raw_pdf_path'])
+        if result.get('snapshot_path'):
+            logger.add_path(result['snapshot_path'])
+        if result.get('csv_path'):
+            logger.add_path(result['csv_path'])
+        if result.get('latest_path'):
+            logger.add_path(result['latest_path'])
+        
+        # Print results
+        print("✓ Ingestion complete!")
+        print()
+        
+        if result.get('raw_pdf_path'):
+            print(f"  Raw PDF: {result['raw_pdf_path'].relative_to(repo_root)}")
+        
+        if result.get('snapshot_path'):
+            print(f"  Snapshot: {result['snapshot_path'].relative_to(repo_root)}")
+        
+        if result.get('latest_path'):
+            print(f"  Latest: {result['latest_path'].relative_to(repo_root)}")
+        
+        if result.get('csv_path'):
+            print(f"  CSV export: {result['csv_path'].relative_to(repo_root)}")
+        
+        print()
+        print(f"  Holdings extracted: {result.get('holdings_count', 0)}")
+        
+        # Warnings
+        if result.get('warnings'):
+            print()
+            print("Warnings:")
+            for warning in result['warnings']:
+                print(f"  ⚠ {warning}")
+                logger.add_warning(warning)
+        
+        logger.set_info('holdings_count', result.get('holdings_count', 0))
+        logger.set_info('account', account_name)
+        logger.success("PDF ingestion completed")
+        
+        return 0
+    
+    except IngestError as e:
+        print(f"\nError: {e}", file=sys.stderr)
+        logger.failure(str(e))
+        return 1
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
 def main(argv: List[str] = None) -> int:
     """Main CLI entrypoint"""
     if argv is None:
@@ -250,6 +322,12 @@ def main(argv: List[str] = None) -> int:
     validate_parser.add_argument('--file', required=True, help='File to validate')
     validate_parser.add_argument('--schema', help='Schema file to validate against')
     
+    # ingest command
+    ingest_parser = subparsers.add_parser('ingest', help='Ingest Trade Republic PDF')
+    ingest_parser.add_argument('--pdf', required=True, help='Path to Trade Republic PDF')
+    ingest_parser.add_argument('--account', help='Account name (default: unknown)')
+    ingest_parser.add_argument('--no-csv', action='store_true', help='Skip CSV export')
+    
     # scaffold command with subcommands
     scaffold_parser = subparsers.add_parser('scaffold', help='Create templates')
     scaffold_subparsers = scaffold_parser.add_subparsers(dest='scaffold_type', help='Template type')
@@ -285,6 +363,8 @@ def main(argv: List[str] = None) -> int:
             return cmd_doctor(args, repo_root, config, logger)
         elif args.command == 'validate':
             return cmd_validate(args, repo_root, config, logger)
+        elif args.command == 'ingest':
+            return cmd_ingest(args, repo_root, config, logger)
         elif args.command == 'scaffold':
             if args.scaffold_type == 'decision':
                 return cmd_scaffold_decision(args, repo_root, config, logger)
