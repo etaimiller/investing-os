@@ -68,12 +68,14 @@ config/secrets/
 .cache/
 *.cache
 
-# Logs
-logs/
+# Logs (keep directory structure READMEs)
+logs/**
+!logs/README.md
 *.log
 
-# Personal Data (NEVER commit)
-portfolio/
+# Personal Data (NEVER commit - keep directory structure READMEs)
+portfolio/**
+!portfolio/README.md
 personal/
 sensitive/
 private/
