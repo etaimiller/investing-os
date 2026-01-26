@@ -211,3 +211,89 @@ principles:
   - Quality of business over growth rate
   - Understand before valuing
   - Pass on opportunities you don't understand
+
+# TODO: Per-Asset-Class and Geographic Overrides
+# The above assumptions are defaults. Different asset classes, geographies, and
+# currencies may warrant different assumptions. Future enhancements:
+
+per_asset_class_overrides:
+  # TODO: Define when Step 5 (Valuation v1) is implemented
+  # Examples of potential overrides:
+  
+  developed_large_cap_equities:
+    # TODO: May use lower discount rate (10-11% vs 12%)
+    # TODO: More predictable cash flows warrant less conservatism
+    discount_rate_adjustment: null  # e.g., -0.01 (reduce by 1%)
+    terminal_growth_rate: null  # e.g., 0.025 (2.5% for mature markets)
+    
+  emerging_market_equities:
+    # TODO: Higher discount rate for country/currency risk
+    # TODO: Lower terminal growth despite faster GDP growth (mean reversion)
+    discount_rate_adjustment: null  # e.g., +0.03 (increase by 3%)
+    currency_risk_premium: null  # e.g., +0.02 (additional 2%)
+    
+  financial_sector:
+    # TODO: Different valuation methodology (P/B, ROE-based vs DCF)
+    # TODO: Regulatory capital requirements affect cash flow
+    preferred_methodology: null  # e.g., "price_to_book" or "dividend_discount"
+    discount_rate_adjustment: null  # e.g., +0.01 for opacity
+    
+  cyclical_businesses:
+    # TODO: Use through-cycle earnings, not peak
+    # TODO: Higher discount rate for volatility
+    earnings_normalization: null  # e.g., "10_year_average"
+    discount_rate_adjustment: null  # e.g., +0.02
+    
+  real_estate_investment_trusts:
+    # TODO: May use different methodology (dividend yield, NAV)
+    # TODO: Interest rate sensitivity requires different discount rate
+    preferred_methodology: null  # e.g., "dividend_discount_model"
+
+geographic_currency_adjustments:
+  # TODO: Different risk-free rates and growth assumptions by geography
+  
+  eurozone:
+    # TODO: Use German bund yield as risk-free rate
+    # TODO: Lower long-term growth than US
+    risk_free_rate: null  # e.g., current 10Y bund yield
+    terminal_growth_rate: null  # e.g., 0.02 (2% vs 3% US)
+    
+  united_states:
+    # TODO: Use US Treasury yield
+    # TODO: Default 3% terminal growth reasonable
+    risk_free_rate: null  # e.g., current 10Y treasury yield
+    terminal_growth_rate: null  # e.g., 0.03
+    
+  emerging_markets:
+    # TODO: Higher risk-free rate (local bond yield + spread)
+    # TODO: Currency devaluation risk in terminal value
+    risk_free_rate: null  # e.g., local 10Y + spread
+    currency_risk_adjustment: null  # e.g., assume 2% annual devaluation
+
+assumption_profiles:
+  # TODO: Future enhancement - multiple assumption profiles beyond "conservative"
+  # Would allow comparing valuations under different assumption sets
+  
+  conservative:
+    # Current default profile documented above
+    description: "Low growth, high discount rate, large margin of safety"
+    
+  base_case:
+    # TODO: Moderate assumptions for comparison
+    description: "Historical averages, market discount rate, standard margin"
+    discount_rate_adjustment: null  # e.g., -0.01 vs conservative
+    margin_of_safety: null  # e.g., 0.20 (20% vs 25% conservative)
+    
+  optimistic:
+    # TODO: For understanding upside case only - never use for buy decisions
+    description: "Favorable assumptions for scenario analysis only"
+    discount_rate_adjustment: null  # e.g., -0.02 vs conservative
+    margin_of_safety: null  # e.g., 0.15 (15%)
+    warning: "Never use optimistic profile for purchase decisions"
+
+# TODO: User Input Required - Customization for Your Portfolio
+# - Which asset classes are you investing in (equities, bonds, REITs, etc.)?
+# - Which geographies/currencies are relevant (EUR, USD, emerging markets)?
+# - Should discount rates vary by geography or stay consistent?
+# - Do you want multiple assumption profiles (conservative/base/optimistic)?
+# - How should currency risk be incorporated into valuations?

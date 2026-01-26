@@ -2,10 +2,30 @@
 
 This directory contains JSON schemas and format specifications for all Investment OS data structures.
 
+## Centralized Schema Approach
+
+**All schemas are centralized in this directory** for validation stability and consistency.
+
+**Why centralized**:
+- Single source of truth for data structure definitions
+- Easier to maintain schema versioning and compatibility
+- Clear dependency management across the system
+- Prevents schema drift between domain areas
+
+**How domains reference schemas**:
+- Domain README files (portfolio/, valuations/, decisions/) link to relevant schemas
+- Data files include schema references in their metadata
+- Validation tools reference schemas by path: `schema/<name>.schema.json`
+
+**Future considerations** (TODO):
+- Moving schemas to domain-local locations (e.g., `portfolio/schema/`) would be a deliberate refactor
+- Would require updating all references and validation tooling
+- Current centralized approach is intentional for system stability
+
 ## What Belongs Here
 
 - **JSON schemas** - Formal schema definitions for data validation
-- **Format specifications** - Templates and examples for data formats
+- **Format specifications** - Templates and examples for data formats (when centralized)
 - **Validation rules** - Data quality and consistency requirements
 
 ## Core Schemas

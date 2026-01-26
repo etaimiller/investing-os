@@ -76,6 +76,9 @@ logs/**
 # Personal Data (NEVER commit - keep directory structure READMEs and templates)
 portfolio/**
 !portfolio/README.md
+!portfolio/raw/
+portfolio/raw/**
+!portfolio/raw/README.md
 !portfolio/snapshots/
 portfolio/snapshots/**
 !portfolio/snapshots/template_holdings_snapshot.csv
@@ -83,10 +86,12 @@ personal/
 sensitive/
 private/
 
-# Trade Republic Data (until processed)
+# Trade Republic Data and Raw Broker Statements (NEVER commit)
+# Raw PDFs contain sensitive personal financial data
 raw_exports/
 downloads/
 *.csv.imported
+*.pdf  # Broker statements in PDF format
 
 # Analysis Outputs (until committed)
 drafts/

@@ -176,6 +176,44 @@ alert_priorities:
 # - What time should daily digest be generated?
 # - Should alerts be email, file-based, or both?
 
+# Alert Noise Controls
+# Prevent alert fatigue while ensuring important signals aren't missed
+alert_noise_controls:
+  cooldown_per_asset:
+    enabled: true
+    cooldown_days: 3  # TODO: Adjust based on preference
+    rationale: |
+      Prevent repeated alerts for same ticker within short period.
+      After alert fires for a security, wait N days before alerting again
+      unless situation materially worsens (e.g., critical threshold crossed).
+    exceptions:
+      - priority: critical  # Critical alerts ignore cooldown
+      - valuation_change_gt: 25  # >25% valuation change overrides cooldown
+      
+  digest_limits:
+    max_items_per_section: 10  # TODO: Adjust for digest length preference
+    max_total_items: 50  # Cap total digest length
+    priority_sort: true  # Show highest priority items first
+    rationale: "Prevent overwhelming daily digests; focus on most important items"
+    
+  snooze_rules:
+    enabled: true  # TODO: Implement in Step 7
+    max_snooze_days: 30
+    rationale: |
+      Allow temporarily muting alerts for specific securities or rule types.
+      Useful for known situations (e.g., planned holding through volatility).
+      Snooze expires automatically after max_snooze_days.
+    snooze_file: monitoring/alerts/snoozed.yaml
+    
+  email_settings:
+    enabled: false  # TODO: Enable when email delivery implemented
+    min_priority_for_email: high  # TODO: Only email high/critical alerts
+    batch_digest: true  # TODO: Send single daily email vs per-alert emails
+    email_schedule: "daily_8am"  # TODO: When to send digest email
+    rationale: |
+      Email for urgent items only; daily digest covers routine items.
+      Prevents inbox overload while ensuring critical issues get attention.
+
 # Alert Delivery Configuration
 alert_delivery:
   method: file_based  # Write alerts to files for review

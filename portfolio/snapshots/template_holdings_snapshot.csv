@@ -1,12 +1,24 @@
-# Portfolio Snapshot Template
-# This is a sample/template showing the expected format for portfolio holdings snapshots
+# Portfolio Snapshot CSV Template
+# 
+# IMPORTANT: This CSV format is a CONVENIENCE FORMAT / MAPPING AID only.
+# The CANONICAL snapshot format is JSON governed by schema/portfolio-state.schema.json
+#
+# This CSV serves two purposes:
+# 1. Show field mappings for parsing Trade Republic PDFs → canonical JSON
+# 2. Provide convenience export format that can be generated from canonical JSON
+#
+# Workflow:
+#   Raw PDF → Parse → Normalize → Canonical JSON (YYYY-MM-DD-HHMMSS.json)
+#                                       ↓
+#                                  (optional) Generate CSV for spreadsheet viewing
+#
 # Actual data files should be stored in portfolio/snapshots/ with timestamp-based naming
 
 # Snapshot Metadata
 # snapshot_id: YYYY-MM-DD-HHMMSS format
 # timestamp: ISO 8601 format
-# source_broker: Trade Republic (or other broker)
-# export_date: Date data was exported from broker
+# source_broker: Trade Republic (primary input: Portfolio PDFs)
+# export_date: Date data was extracted from broker statement
 
 # Holdings Data
 # Each row represents one security position
@@ -34,9 +46,10 @@
 # market_currency: Currency of market pricing
 
 # TODO: User Input Required
-# - Confirm column order matches Trade Republic export format
-# - Determine if additional broker-specific columns are needed
+# - Confirm field mapping matches Trade Republic PDF format
+# - Determine if additional broker-specific fields are needed in JSON schema
 # - Decide whether to track lots separately or aggregate positions
+# - Verify ISIN extraction from Trade Republic PDFs is reliable
 
 # Sample Data Format (CSV)
 security_id,security_type,name,ticker,isin,quantity,currency,account_id,account_type,total_cost,average_price,cost_currency,market_price,price_date,market_value,market_currency

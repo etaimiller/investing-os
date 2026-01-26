@@ -32,18 +32,28 @@ skills/
 ### `portfolio/` - Portfolio State and Holdings
 **Purpose**: Current and historical portfolio state, holdings data, and account statements
 
+**Three-layer architecture**:
+- **Layer A**: Raw inputs (Trade Republic PDFs) in `raw/` - immutable source of truth
+- **Layer B**: Canonical snapshots (schema-validated JSON) in `snapshots/` - single source for analysis
+- **Layer C**: Convenience exports (CSV, MD) generated from canonical JSON
+
 **Structure**:
 ```
 portfolio/
-├── README.md          # Portfolio directory overview and workflows
-├── snapshots/         # Historical portfolio snapshots
-├── holdings/          # Current and recent holdings data
-├── cash/             # Cash and money market fund balances
-└── statements/       # Processed account statements
+├── README.md          # Portfolio directory overview and three-layer architecture
+├── raw/              # Raw broker statements (primarily Trade Republic PDFs)
+│   └── README.md     # Raw input format documentation
+├── snapshots/         # Canonical normalized snapshots (JSON, schema-validated)
+│   └── template_holdings_snapshot.csv  # CSV mapping aid / convenience format
+├── holdings/          # Current and recent holdings data (planned)
+├── cash/             # Cash and money market fund balances (planned)
+└── statements/       # Processed account statements (planned)
 ```
 
-**Status**: Directory created with README (Step 1)
-**See**: [portfolio/README.md](portfolio/README.md) for workflow details
+**Status**: Directories created with READMEs (Step 1, enhanced Step 2.1)
+**See**: 
+- [portfolio/README.md](portfolio/README.md) for three-layer architecture details
+- [portfolio/raw/README.md](portfolio/raw/README.md) for raw PDF input format
 
 ### `research/` - Investment Research and Analysis
 **Purpose**: Company research, financial analysis, market research, and security analysis
@@ -219,6 +229,18 @@ bin/
   - valuations/assumptions/conservative.yaml
   - monitoring/watch_rules.yaml
 - **Output**: Complete data format specifications separating facts, assumptions, and derived values
+
+### Step 2.1: Tighten Snapshot Contract and PDF Input ✓
+- **Dependencies**: Step 2 schemas
+- **Creates**: Raw input documentation and schema placement clarity
+- **Files Created/Updated**:
+  - portfolio/raw/README.md (Trade Republic PDF as primary input)
+  - Updated portfolio/README.md (three-layer architecture: raw PDFs → canonical JSON → convenience exports)
+  - Updated portfolio/snapshots/template_holdings_snapshot.csv (clarify CSV is convenience format)
+  - Updated schema/README.md (centralized schema approach documented)
+  - Updated monitoring/watch_rules.yaml (alert noise controls: cooldown, digest limits, snooze)
+  - Updated valuations/assumptions/conservative.yaml (per-asset-class overrides, profiles)
+- **Output**: Clear separation of raw PDFs, canonical JSON, and convenience formats; enhanced monitoring and assumption flexibility
 
 ### Step 3: Dispatch-Style CLI Scaffold
 - **Dependencies**: Step 2 schemas
