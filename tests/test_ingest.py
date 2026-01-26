@@ -510,6 +510,106 @@ Gewinn +262,50 EUR
             shutil.rmtree(temp_dir)
 
 
+class TestTableLayoutParsing(unittest.TestCase):
+    """Test parsing of Trade Republic table layout with column headers"""
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_table_layout_with_kurswert_header(self, mock_fitz):
+        """Test extraction from table layout with KURSWERT IN EUR column header"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with table layout (number-first quantity, column headers)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+                                        KURSWERT IN EUR
+
+MSCI World ETF
+ISIN: IE00B4L5Y983
+WKN: A0RPWH
+12,345678 Stk.
+26.01.2026
+1.234,56
+5.678,90
+
+Tesla Inc.
+ISIN: US88160R1014
+WKN: A1CX3T
+5,00 Stk.
+27.01.2026
+789,12
+3.945,60
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 2 holdings
+            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
+            
+            # Check MSCI World ETF
+            msci = next((h for h in holdings if h['isin'] == 'IE00B4L5Y983'), None)
+            self.assertIsNotNone(msci, "Should find MSCI World ETF")
+            
+            if msci:
+                self.assertIn('MSCI World', msci['name'],
+                            "Should extract name containing 'MSCI World'")
+                
+                # Quantity should be extracted from "12,345678 Stk." format
+                self.assertIsNotNone(msci['quantity'],
+                                   "Should extract quantity")
+                self.assertAlmostEqual(msci['quantity'], 12.345678, places=4,
+                                     msg="Should extract correct quantity from number-first format")
+                
+                # Market value should use after-date heuristic
+                if msci.get('market_data'):
+                    self.assertIsNotNone(msci['market_data'].get('market_value'),
+                                       "Should extract market value")
+                    # After date 26.01.2026, first number is 1.234,56
+                    self.assertAlmostEqual(msci['market_data']['market_value'],
+                                         1234.56, places=2,
+                                         msg="Should extract market value using after-date heuristic")
+            
+            # Check Tesla
+            tesla = next((h for h in holdings if h['isin'] == 'US88160R1014'), None)
+            self.assertIsNotNone(tesla, "Should find Tesla")
+            
+            if tesla:
+                self.assertIn('Tesla', tesla['name'],
+                            "Should extract name containing 'Tesla'")
+                
+                self.assertIsNotNone(tesla['quantity'],
+                                   "Should extract quantity for Tesla")
+                self.assertAlmostEqual(tesla['quantity'], 5.0, places=1,
+                                     msg="Should extract correct quantity for Tesla")
+                
+                if tesla.get('market_data'):
+                    # After date 27.01.2026, first number is 789,12
+                    self.assertAlmostEqual(tesla['market_data']['market_value'],
+                                         789.12, places=2,
+                                         msg="Should extract market value for Tesla using after-date heuristic")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+
+
 class TestSnapshotSchemaCompliance(unittest.TestCase):
     """Test that generated snapshots comply with schema"""
     

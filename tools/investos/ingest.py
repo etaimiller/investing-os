@@ -331,8 +331,33 @@ class TradeRepublicParser:
             # Last holding - cap at +20 lines
             block_end = min(len(all_lines), isin_line_idx + 20)
         
-        # Extract block
+        # Extract initial block
         block_lines = all_lines[block_start:block_end]
+        
+        # Trim block end if we encounter "start of next position" marker
+        # Pattern: line starting with number followed by "Stk." / "Stück" / "Anteile"
+        # BUT: Only trim if we've already seen at least one such line (the current holding's quantity)
+        next_holding_pattern = re.compile(r'^\s*[0-9][0-9\.,]*\s*(Stk\.?|Stück|Anteile)\s*$', re.IGNORECASE)
+        
+        isin_offset_in_block = isin_line_idx - block_start
+        trimmed_end = None
+        first_qty_line = None
+        
+        for i in range(isin_offset_in_block + 1, len(block_lines)):
+            if next_holding_pattern.match(block_lines[i]):
+                if first_qty_line is None:
+                    # This is the current holding's quantity line - keep it
+                    first_qty_line = i
+                else:
+                    # This is the SECOND quantity line - must be next holding
+                    trimmed_end = i
+                    if self.debug:
+                        print(f"[DEBUG] Trimming block at line {block_start + i} (next holding marker)")
+                    break
+        
+        if trimmed_end:
+            block_lines = block_lines[:trimmed_end]
+        
         block_text = '\n'.join(block_lines)
         
         # Debug output for first 2 holdings only
@@ -348,11 +373,18 @@ class TradeRepublicParser:
             if len(block_lines) > 15:
                 print(f"  ... ({len(block_lines) - 15} more lines)")
         
-        # Extract fields
+        # Extract fields (with metadata for debug)
         name = self._extract_name(block_lines, isin_line_idx - block_start, isin)
-        quantity = self._extract_quantity(block_text)
-        market_value = self._extract_market_value(block_text)
+        quantity, qty_method = self._extract_quantity_with_meta(block_lines, block_start)
+        market_value, mv_method = self._extract_market_value_with_meta(block_lines, block_start)
         currency = self._extract_currency(block_text)
+        
+        # Debug output for extraction methods (first 2 holdings only)
+        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 2:
+            if qty_method:
+                print(f"[DEBUG] Quantity extraction: {qty_method}")
+            if mv_method:
+                print(f"[DEBUG] Market value extraction: {mv_method}")
         
         # Per-holding warnings
         warnings = []
@@ -439,28 +471,111 @@ class TradeRepublicParser:
         
         return None
     
-    def _extract_quantity(self, block_text: str) -> Optional[float]:
-        """Extract quantity using labeled patterns (DE + EN)"""
-        # Try labeled patterns first
-        quantity_patterns = [
+    def _extract_quantity_with_meta(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+        """
+        Extract quantity with metadata about extraction method.
+        Returns: (quantity, method_description)
+        """
+        # Pattern 1: Number-first format (preferred for Trade Republic table layout)
+        # Example: "12,345678 Stk."
+        number_first_pattern = re.compile(r'^\s*([0-9][0-9\.,]*)\s*(Stk\.?|Stück|Anteile)\s*$', re.IGNORECASE)
+        
+        # Look for number-first pattern, preferring lines ABOVE where we'd expect ISIN
+        # (to avoid catching next holding's quantity)
+        for i, line in enumerate(block_lines):
+            match = number_first_pattern.match(line)
+            if match:
+                qty_str = match.group(1)
+                qty = self._parse_number(qty_str)
+                if qty is not None and qty > 0:
+                    line_num = block_start + i
+                    return qty, f"number-first line {line_num}"
+        
+        # Pattern 2: Label-first format (fallback)
+        # Example: "Stück 10,00" or "Anteile: 50,00"
+        label_first_patterns = [
             r'(?:Stk\.?|Stück|Anteile|Qty|Quantity)\s*[:=]?\s*([0-9][0-9\.,\s]*)',
-            r'\b([0-9][0-9\.,\s]*)\s+(?:Stk\.?|Stück|Anteile)',
         ]
         
-        for pattern in quantity_patterns:
+        block_text = '\n'.join(block_lines)
+        for pattern in label_first_patterns:
             match = re.search(pattern, block_text, re.IGNORECASE)
             if match:
                 qty_str = match.group(1)
                 qty = self._parse_number(qty_str)
                 if qty is not None and qty > 0:
-                    return qty
+                    return qty, "label-first pattern"
         
-        return None
+        return None, None
     
-    def _extract_market_value(self, block_text: str) -> Optional[float]:
-        """Extract market value using labeled patterns"""
+    def _extract_market_value_with_meta(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+        """
+        Extract market value with metadata about extraction method.
+        Returns: (market_value, method_description)
+        """
+        block_text = '\n'.join(block_lines)
+        
+        # Check if this is a table layout with column headers
+        has_kurswert_header = bool(re.search(r'\bKURSWERT\s+IN\s+EUR\b', block_text, re.IGNORECASE))
+        
+        if has_kurswert_header:
+            # Table layout: use column-based extraction
+            return self._extract_market_value_column_based(block_lines, block_start)
+        
+        # Fallback: labeled pattern extraction
+        return self._extract_market_value_labeled(block_lines, block_start)
+    
+    def _extract_market_value_column_based(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+        """Extract market value using column header and date heuristics"""
+        # Find date lines (DD.MM.YYYY format)
+        date_pattern = re.compile(r'\b\d{2}\.\d{2}\.\d{4}\b')
+        date_line_idx = None
+        
+        for i, line in enumerate(block_lines):
+            if date_pattern.search(line):
+                date_line_idx = i
+                break
+        
+        # Extract all money-like numbers (German format)
+        # Exclude quantity lines (those matching number + Stk/Stück/Anteile)
+        money_pattern = re.compile(r'\b([0-9][0-9\.,]+)\b')
+        qty_line_pattern = re.compile(r'^\s*[0-9][0-9\.,]*\s*(Stk\.?|Stück|Anteile)\s*$', re.IGNORECASE)
+        
+        money_candidates = []
+        for i, line in enumerate(block_lines):
+            # Skip quantity lines
+            if qty_line_pattern.match(line):
+                continue
+            
+            # Find all numbers in this line
+            for match in money_pattern.finditer(line):
+                num_str = match.group(1)
+                # Must have at least one separator to be money-like
+                if ',' in num_str or '.' in num_str:
+                    num = self._parse_number(num_str)
+                    if num is not None and num > 0:
+                        money_candidates.append((i, num, line))
+        
+        if not money_candidates:
+            return None, None
+        
+        # Heuristic A: If there's a date, take first money-like number AFTER the date
+        if date_line_idx is not None:
+            for line_idx, value, line in money_candidates:
+                if line_idx > date_line_idx:
+                    line_num = block_start + line_idx
+                    return value, f"after-date line {line_num}"
+        
+        # Heuristic B: Take the last money-like number
+        last_idx, last_value, last_line = money_candidates[-1]
+        line_num = block_start + last_idx
+        return last_value, f"last-number line {line_num}"
+    
+    def _extract_market_value_labeled(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+        """Extract market value using labeled patterns (fallback)"""
+        block_text = '\n'.join(block_lines)
+        
         # Try labeled patterns first (DE + EN)
-        # These are more specific and reliable
         value_patterns = [
             r'(?:Wert|Kurswert|Gesamtwert)\s*[:=]?\s*([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)',
             r'(?:Value|Market Value)\s*[:=]?\s*([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)',
@@ -472,12 +587,10 @@ class TradeRepublicParser:
                 value_str = match.group(1)
                 value = self._parse_number(value_str)
                 if value is not None and value > 0:
-                    return value
+                    return value, "labeled-pattern"
         
         # Fallback: Look for lines with "Wert" or "Value" and extract number
-        # This is more conservative than taking the largest number
-        lines = block_text.split('\n')
-        for line in lines:
+        for i, line in enumerate(block_lines):
             if re.search(r'\b(Wert|Kurswert|Gesamtwert|Value)\b', line, re.IGNORECASE):
                 # Extract number with currency from this line only
                 number_pattern = re.compile(r'([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)')
@@ -486,9 +599,10 @@ class TradeRepublicParser:
                     value_str = match.group(1)
                     value = self._parse_number(value_str)
                     if value is not None and value > 0:
-                        return value
+                        line_num = block_start + i
+                        return value, f"wert-line line {line_num}"
         
-        return None
+        return None, None
     
     def _extract_currency(self, block_text: str) -> str:
         """Extract currency code from block, default to EUR"""
