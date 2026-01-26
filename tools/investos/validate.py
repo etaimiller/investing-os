@@ -1,18 +1,27 @@
 """
 JSON validation for Investment OS
 
-Currently provides basic JSON parsing and structure validation.
-Full JSON Schema Draft-07 validation will be added in Step 4/5 with jsonschema dependency.
+Provides full JSON Schema Draft-07 validation using jsonschema library.
+Falls back to basic validation if jsonschema not installed.
 
-For now, we validate:
+Validates:
 - File is valid JSON
-- Required top-level keys are present
-- Basic type checking for known fields
+- Data conforms to JSON Schema (if schema provided)
+- Required top-level keys are present (basic mode)
+- Basic type checking for known fields (basic mode)
 """
 
 from pathlib import Path
 from typing import Dict, Any, List
 import json
+
+try:
+    import jsonschema
+    from jsonschema import Draft7Validator, validators
+    JSONSCHEMA_AVAILABLE = True
+except ImportError:
+    jsonschema = None
+    JSONSCHEMA_AVAILABLE = False
 
 
 class ValidationResult:
@@ -153,10 +162,10 @@ def validate_decision_memo(data: Dict[str, Any]) -> ValidationResult:
 
 def validate_with_schema(file_path: Path, schema_path: Path) -> ValidationResult:
     """
-    Validate JSON file against schema.
+    Validate JSON file against JSON Schema.
     
-    Currently performs basic validation only.
-    Full JSON Schema Draft-07 validation will be enabled in Step 4/5.
+    Uses jsonschema library for full Draft-07 validation if available.
+    Falls back to basic validation if jsonschema not installed.
     """
     errors = []
     warnings = []
@@ -170,16 +179,51 @@ def validate_with_schema(file_path: Path, schema_path: Path) -> ValidationResult
     with open(file_path, 'r') as f:
         data = json.load(f)
     
-    # Determine schema type and validate
-    schema_name = schema_path.name
+    # Load schema
+    if not schema_path.exists():
+        errors.append(f"Schema file not found: {schema_path}")
+        return ValidationResult(False, errors, warnings)
     
-    if 'portfolio-state' in schema_name:
-        return validate_portfolio_snapshot(data)
-    elif 'valuation-model' in schema_name:
-        return validate_valuation_model(data)
-    elif 'decision-memo' in schema_name:
-        return validate_decision_memo(data)
+    try:
+        with open(schema_path, 'r') as f:
+            schema = json.load(f)
+    except json.JSONDecodeError as e:
+        errors.append(f"Schema file is not valid JSON: {e}")
+        return ValidationResult(False, errors, warnings)
+    
+    # Perform full JSON Schema validation if available
+    if JSONSCHEMA_AVAILABLE:
+        try:
+            validator = Draft7Validator(schema)
+            validation_errors = list(validator.iter_errors(data))
+            
+            if validation_errors:
+                for error in validation_errors:
+                    # Format error path
+                    path = '.'.join(str(p) for p in error.path) if error.path else 'root'
+                    errors.append(f"{path}: {error.message}")
+                
+                return ValidationResult(False, errors, warnings)
+            else:
+                return ValidationResult(True, errors, warnings)
+        
+        except Exception as e:
+            errors.append(f"Schema validation error: {e}")
+            return ValidationResult(False, errors, warnings)
+    
     else:
-        warnings.append(f"Unknown schema type: {schema_name}")
-        warnings.append("Performing JSON syntax validation only")
-        return ValidationResult(True, errors, warnings)
+        # Fallback to basic validation
+        warnings.append("jsonschema library not installed - performing basic validation only")
+        warnings.append("Install with: pip install jsonschema>=4.17.0")
+        
+        schema_name = schema_path.name
+        
+        if 'portfolio-state' in schema_name:
+            return validate_portfolio_snapshot(data)
+        elif 'valuation-model' in schema_name:
+            return validate_valuation_model(data)
+        elif 'decision-memo' in schema_name:
+            return validate_decision_memo(data)
+        else:
+            warnings.append(f"Unknown schema type: {schema_name}")
+            return ValidationResult(True, errors, warnings)

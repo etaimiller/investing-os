@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Tuple
 from .utils import is_valid_json
 from .config import Config
+from .validate import validate_with_schema, JSONSCHEMA_AVAILABLE
 
 
 class HealthCheck:
@@ -168,7 +169,7 @@ def check_config_file(repo_root: Path, health: HealthCheck) -> None:
 
 
 def check_portfolio_snapshots(repo_root: Path, config: Config, health: HealthCheck) -> None:
-    """Check portfolio snapshots for validity"""
+    """Check portfolio snapshots for validity and schema compliance"""
     snapshots_dir = repo_root / config.snapshots_dir
     
     if not snapshots_dir.exists():
@@ -181,11 +182,29 @@ def check_portfolio_snapshots(repo_root: Path, config: Config, health: HealthChe
         health.warn("No portfolio snapshots found (expected for new repo)")
         return
     
+    # Get schema path
+    schema_path = repo_root / config.schema_dir / 'portfolio-state.schema.json'
+    
     for json_file in json_files:
-        if is_valid_json(json_file):
-            health.pass_check(f"Valid snapshot: {json_file.name}")
-        else:
+        # First check valid JSON
+        if not is_valid_json(json_file):
             health.fail_check(f"Invalid JSON in snapshot: {json_file.name}")
+            continue
+        
+        # Then validate against schema if jsonschema available
+        if JSONSCHEMA_AVAILABLE and schema_path.exists():
+            result = validate_with_schema(json_file, schema_path)
+            if result.valid:
+                health.pass_check(f"Valid snapshot (schema-compliant): {json_file.name}")
+            else:
+                health.fail_check(f"Schema validation failed: {json_file.name}")
+                for error in result.errors[:3]:  # Show first 3 errors
+                    health.warn(f"  {error}")
+        else:
+            # Basic validation only
+            health.pass_check(f"Valid JSON snapshot: {json_file.name}")
+            if not JSONSCHEMA_AVAILABLE:
+                health.warn("jsonschema not installed - schema validation skipped")
 
 
 def run_health_check(repo_root: Path, config: Config) -> HealthCheck:

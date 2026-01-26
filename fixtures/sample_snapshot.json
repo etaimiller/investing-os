@@ -1,0 +1,112 @@
+{
+  "snapshot_id": "2024-01-15-143022",
+  "timestamp": "2024-01-15T14:30:22.567890+00:00",
+  "version": "1.0.0",
+  "source": {
+    "broker": "Trade Republic",
+    "export_date": "2024-01-15",
+    "import_method": "pdf_ingestion",
+    "source_file": "trade_republic_sample_2024-01-15-143022_portfolio.pdf"
+  },
+  "accounts": [
+    {
+      "account_id": "trade_republic_sample",
+      "account_type": "taxable",
+      "account_name": "Trade Republic (sample)",
+      "currency": "EUR"
+    }
+  ],
+  "holdings": [
+    {
+      "security_id": "US0000000001",
+      "security_type": "stock",
+      "name": "Sample Technology Corp",
+      "ticker": "SMPL",
+      "isin": "US0000000001",
+      "quantity": 50,
+      "currency": "USD",
+      "account_id": "trade_republic_sample",
+      "cost_basis": {
+        "total_cost": 5000.00,
+        "average_price": 100.00,
+        "currency": "USD"
+      },
+      "market_data": {
+        "price": 125.50,
+        "price_date": "2024-01-15T14:30:22+00:00",
+        "market_value": 6275.00,
+        "currency": "USD"
+      }
+    },
+    {
+      "security_id": "IE00B0000000",
+      "security_type": "etf",
+      "name": "Sample World Index ETF",
+      "ticker": "SWLD",
+      "isin": "IE00B0000000",
+      "quantity": 100,
+      "currency": "EUR",
+      "account_id": "trade_republic_sample",
+      "cost_basis": {
+        "total_cost": 7000.00,
+        "average_price": 70.00,
+        "currency": "EUR"
+      },
+      "market_data": {
+        "price": 75.25,
+        "price_date": "2024-01-15T14:30:22+00:00",
+        "market_value": 7525.00,
+        "currency": "EUR"
+      }
+    },
+    {
+      "security_id": "DE0000000000",
+      "security_type": "stock",
+      "name": "Sample Manufacturing AG",
+      "ticker": "SMFG",
+      "isin": "DE0000000000",
+      "quantity": 25,
+      "currency": "EUR",
+      "account_id": "trade_republic_sample",
+      "cost_basis": {
+        "total_cost": 1250.00,
+        "average_price": 50.00,
+        "currency": "EUR"
+      },
+      "market_data": {
+        "price": 48.75,
+        "price_date": "2024-01-15T14:30:22+00:00",
+        "market_value": 1218.75,
+        "currency": "EUR"
+      }
+    }
+  ],
+  "cash": [
+    {
+      "account_id": "trade_republic_sample",
+      "currency": "EUR",
+      "amount": 2500.00,
+      "cash_type": "available"
+    }
+  ],
+  "totals": {
+    "base_currency": "EUR",
+    "total_market_value": 15018.75,
+    "total_cash": 2500.00,
+    "total_portfolio_value": 17518.75,
+    "allocation": {
+      "equities_pct": 85.7,
+      "cash_pct": 14.3,
+      "other_pct": 0.0
+    }
+  },
+  "metadata": {
+    "validation_status": "validated",
+    "validation_notes": [
+      "This is FICTIONAL sample data for testing purposes",
+      "ISINs, tickers, and values are not real",
+      "Do not use for actual investment decisions"
+    ],
+    "notes": "Sample portfolio snapshot for testing and documentation"
+  }
+}

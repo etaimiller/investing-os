@@ -17,6 +17,7 @@ import shutil
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.investos.ingest import create_canonical_snapshot
+from tools.investos.validate import validate_with_schema, JSONSCHEMA_AVAILABLE
 
 
 class TestSnapshotCreation(unittest.TestCase):
@@ -255,6 +256,98 @@ class TestParsingContract(unittest.TestCase):
         holding = snapshot['holdings'][0]
         if 'market_data' in holding:
             self.assertIsNone(holding['market_data'])
+
+
+class TestFixtureValidation(unittest.TestCase):
+    """Test that committed fixtures validate against schemas"""
+    
+    def test_sample_snapshot_validates(self):
+        """Test that fixtures/sample_snapshot.json validates against schema"""
+        if not JSONSCHEMA_AVAILABLE:
+            self.skipTest("jsonschema not installed")
+        
+        repo_root = Path(__file__).parent.parent
+        fixture_path = repo_root / 'fixtures' / 'sample_snapshot.json'
+        schema_path = repo_root / 'schema' / 'portfolio-state.schema.json'
+        
+        self.assertTrue(fixture_path.exists(), "Sample fixture should exist")
+        self.assertTrue(schema_path.exists(), "Portfolio schema should exist")
+        
+        result = validate_with_schema(fixture_path, schema_path)
+        
+        if not result.valid:
+            self.fail(f"Sample fixture validation failed:\n" + "\n".join(result.errors))
+        
+        self.assertTrue(result.valid, "Sample snapshot should validate against schema")
+
+
+class TestSnapshotSchemaCompliance(unittest.TestCase):
+    """Test that generated snapshots comply with schema"""
+    
+    @unittest.skipIf(not JSONSCHEMA_AVAILABLE, "jsonschema not installed")
+    def test_generated_snapshot_validates_against_schema(self):
+        """Test that create_canonical_snapshot produces schema-compliant output"""
+        # Mock parsed data
+        parsed_data = {
+            'holdings': [
+                {
+                    'security_id': 'US0000000001',
+                    'isin': 'US0000000001',
+                    'name': 'Test Corp',
+                    'quantity': 10.0,
+                    'currency': 'USD',
+                    'cost_basis': {
+                        'average_price': 100.00,
+                        'total_cost': 1000.00,
+                        'currency': 'USD'
+                    },
+                    'market_data': {
+                        'price': 110.00,
+                        'market_value': 1100.00,
+                        'currency': 'USD'
+                    }
+                }
+            ],
+            'cash': [
+                {
+                    'currency': 'EUR',
+                    'amount': 500.00,
+                    'cash_type': 'available'
+                }
+            ],
+            'warnings': [],
+            'metadata': {}
+        }
+        
+        # Create snapshot
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            source_pdf = temp_dir / 'test.pdf'
+            source_pdf.touch()
+            
+            snapshot = create_canonical_snapshot(parsed_data, source_pdf, 'test')
+            
+            # Write to temp file
+            snapshot_file = temp_dir / 'snapshot.json'
+            with open(snapshot_file, 'w') as f:
+                json.dump(snapshot, f, default=str)
+            
+            # Validate against schema
+            repo_root = Path(__file__).parent.parent
+            schema_path = repo_root / 'schema' / 'portfolio-state.schema.json'
+            
+            result = validate_with_schema(snapshot_file, schema_path)
+            
+            if not result.valid:
+                self.fail(
+                    f"Generated snapshot failed schema validation:\n" + 
+                    "\n".join(result.errors[:5])  # Show first 5 errors
+                )
+            
+            self.assertTrue(result.valid, "Generated snapshot should be schema-compliant")
+        
+        finally:
+            shutil.rmtree(temp_dir)
 
 
 if __name__ == '__main__':

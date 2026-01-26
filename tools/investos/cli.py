@@ -24,7 +24,7 @@ from .utils import find_repo_root, count_files, find_latest_file
 from .config import load_config
 from .logging import create_logger
 from .doctor import run_health_check
-from .validate import validate_with_schema, validate_json_file
+from .validate import validate_with_schema, validate_json_file, JSONSCHEMA_AVAILABLE
 from .scaffold import (
     scaffold_decision_memo,
     scaffold_valuation_input,
@@ -117,8 +117,12 @@ def cmd_validate(args, repo_root: Path, config, logger) -> int:
     if schema_path:
         print(f"Against schema: {schema_path.relative_to(repo_root)}")
         print()
-        print("NOTE: Full JSON Schema Draft-07 validation will be enabled in Step 4/5")
-        print("      Currently performing basic structure validation only.")
+        if JSONSCHEMA_AVAILABLE:
+            print("Using JSON Schema Draft-07 validation")
+        else:
+            print("NOTE: jsonschema library not installed")
+            print("      Performing basic structure validation only")
+            print("      Install with: pip install jsonschema>=4.17.0")
         print()
         
         result = validate_with_schema(file_path, schema_path)
