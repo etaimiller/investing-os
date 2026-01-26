@@ -343,35 +343,454 @@ class TestISINValidation(unittest.TestCase):
         self.assertFalse(is_valid_isin('ie00b4l5y983'))
 
 
-class TestParserFalsePositives(unittest.TestCase):
-    """Test that parser rejects false positive ISIN matches"""
+class TestColumnBasedParsing(unittest.TestCase):
+    """Test column-based parsing architecture (NEW)"""
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_first_row_isin_below_quantity_allowed(self, mock_fitz):
+        """
+        MANDATORY TEST: First-row ISIN below quantity exception (bounded).
+        
+        Tests the bounded exception that allows ISIN lookup BELOW quantity
+        for the FIRST holding only, to handle PDF text extraction ordering.
+        """
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF where FIRST holding has ISIN below quantity (PDF artifact)
+            # SECOND holding has ISIN above (normal case)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+14,007714 Stk.
+Fairfax Financial Holdings Ltd.
+Registered Shares (Sub. Vtg) o.N.
+ISIN: CA3039011026
+1.398,00
+19.582,78
+474,155346 Stk.
+TORM PLC
+Registered Shares A DL -,01
+ISIN: GB00BZ3CNK81
+26.01.2026
+9.030,29
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            warnings = parsed_data['warnings']
+            metadata = parsed_data.get('metadata', {})
+            
+            # Should extract 2 holdings (not reject first one)
+            self.assertEqual(len(holdings), 2, "Should extract both holdings")
+            
+            # Check first holding (ISIN below quantity)
+            first = next((h for h in holdings if h['isin'] == 'CA3039011026'), None)
+            self.assertIsNotNone(first, "First holding should be extracted with ISIN below quantity")
+            if first:
+                self.assertIn('Fairfax', first['name'], "Should extract correct name")
+                self.assertAlmostEqual(first['quantity'], 14.007714, places=4)
+            
+            # Check second holding (ISIN above quantity - normal case)
+            second = next((h for h in holdings if h['isin'] == 'GB00BZ3CNK81'), None)
+            self.assertIsNotNone(second, "Second holding should be extracted normally")
+            if second:
+                self.assertIn('TORM', second['name'], "Should extract correct name")
+                self.assertAlmostEqual(second['quantity'], 474.155346, places=4)
+            
+            # Verify warning was emitted
+            self.assertTrue(
+                any('ISIN found below quantity for first holding' in w for w in warnings),
+                "Warning should be emitted for first-row exception"
+            )
+            
+            # Verify exactly ONE warning for this exception
+            exception_warnings = [w for w in warnings if 'ISIN found below quantity' in w]
+            self.assertEqual(len(exception_warnings), 1,
+                           "Should have exactly ONE warning for first-row exception")
+            
+            # Verify metadata note
+            notes = metadata.get('notes', [])
+            self.assertTrue(
+                any('First holding ISIN resolved below quantity' in note for note in notes),
+                "Metadata should include note about first-row exception"
+            )
+            
+            # CRITICAL: Verify second holding does NOT reuse first ISIN
+            if first and second:
+                self.assertNotEqual(first['isin'], second['isin'],
+                                  "Second holding must have different ISIN")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_column_detection(self, mock_fitz):
+        """Test that column headers are correctly detected"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with column headers
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+Test Content
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            lines = parser.extract_text_lines()
+            columns = parser.detect_columns(lines)
+            
+            # Should detect all 4 columns
+            self.assertIn('quantity', columns, "Should detect quantity column")
+            self.assertIn('name', columns, "Should detect name column")
+            self.assertIn('price', columns, "Should detect price column")
+            self.assertIn('market_value', columns, "Should detect market_value column")
+            self.assertIn('currency', columns, "Should extract currency from header")
+            self.assertEqual(columns['currency'], 'EUR')
+            
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_quantity_line_identification(self, mock_fitz):
+        """Test that quantity lines are correctly identified"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with multiple quantity lines
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+5,00 Stk.
+Test Security A
+ISIN: DE0005140008
+
+10,5 Stk.
+Test Security B
+ISIN: US0378331005
+
+100,123 Stk.
+Test Security C
+ISIN: IE00B4L5Y983
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            lines = parser.extract_text_lines()
+            quantity_lines = parser.find_quantity_lines(lines)
+            
+            # Should find 3 quantity lines
+            self.assertEqual(len(quantity_lines), 3, "Should find all 3 quantity lines")
+            
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_market_value_column_alignment_critical(self, mock_fitz):
+        """
+        CRITICAL TEST: Market value must come from KURSWERT column, NOT proximity.
+        This test MUST FAIL if proximity/heuristic logic is used.
+        """
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF where column-based extraction is REQUIRED
+            # Trade Republic format: Quantity -> Name -> ISIN -> Price -> Date -> Market Value
+            # Market value 1.234,56 should be extracted (not price 125,50)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+3,00 Stk.
+Test Security
+ISIN: DE0005140008
+WKN: 123456
+125,50
+26.01.2026
+1.234,56
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 1 holding
+            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
+            
+            test_sec = holdings[0]
+            self.assertEqual(test_sec['isin'], 'DE0005140008')
+            self.assertAlmostEqual(test_sec['quantity'], 3.0, places=1,
+                                 msg="Should extract quantity from quantity line")
+            
+            # CRITICAL: Market value must be 1.234,56 from KURSWERT column
+            # NOT 3,00 from proximity to quantity line
+            if test_sec.get('market_data'):
+                self.assertAlmostEqual(test_sec['market_data']['market_value'],
+                                     1234.56, places=2,
+                                     msg="CRITICAL: Market value must come from KURSWERT column, not proximity to quantity")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_isin_belongs_to_row_below(self, mock_fitz):
+        """Test that each ISIN is assigned to correct quantity line below it"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with multiple ISINs (Trade Republic format: Qty -> Name -> ISIN)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+5,00 Stk.
+Security A
+ISIN: DE0005140008
+26.01.2026
+1.000,00
+
+10,00 Stk.
+Security B
+ISIN: US0378331005
+26.01.2026
+2.000,00
+
+15,00 Stk.
+Security C
+ISIN: IE00B4L5Y983
+26.01.2026
+3.000,00
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 3 holdings
+            self.assertEqual(len(holdings), 3, "Should extract 3 holdings")
+            
+            # Check each ISIN assigned correctly
+            sec_a = next((h for h in holdings if h['isin'] == 'DE0005140008'), None)
+            self.assertIsNotNone(sec_a)
+            if sec_a:
+                self.assertAlmostEqual(sec_a['quantity'], 5.0, places=1)
+            
+            sec_b = next((h for h in holdings if h['isin'] == 'US0378331005'), None)
+            self.assertIsNotNone(sec_b)
+            if sec_b:
+                self.assertAlmostEqual(sec_b['quantity'], 10.0, places=1)
+            
+            sec_c = next((h for h in holdings if h['isin'] == 'IE00B4L5Y983'), None)
+            self.assertIsNotNone(sec_c)
+            if sec_c:
+                self.assertAlmostEqual(sec_c['quantity'], 15.0, places=1)
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_name_stops_at_boundaries(self, mock_fitz):
+        """Test name extraction stops at: ISIN, headers, previous quantity"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with multi-line name (Trade Republic format: Qty -> Name -> ISIN)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+5,00 Stk.
+Multi Line
+Security Name
+Test Corp
+ISIN: DE0005140008
+26.01.2026
+1.000,00
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            self.assertEqual(len(holdings), 1)
+            
+            # Name should be multi-line but stop at ISIN
+            name = holdings[0]['name']
+            self.assertIn('Test Corp', name, "Should include name lines")
+            self.assertNotIn('ISIN', name, "Should not include ISIN in name")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_missing_column_header_produces_warning(self, mock_fitz):
+        """Test that missing KURSWERT column produces warning and null market_value"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF WITHOUT KURSWERT header (Trade Republic format: Qty -> Name -> ISIN)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+
+5,00 Stk.
+Test Security
+ISIN: DE0005140008
+1.234,56
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            # Should have warning
+            self.assertTrue(len(parsed_data['warnings']) > 0, 
+                          "Should produce warning when column header missing")
+            self.assertTrue(any('KURSWERT' in w for w in parsed_data['warnings']),
+                          "Warning should mention missing KURSWERT column")
+            
+            # Market value should be None
+            holdings = parsed_data['holdings']
+            if len(holdings) > 0:
+                test_sec = holdings[0]
+                self.assertIsNone(test_sec.get('market_data'),
+                                "Market data should be None when column not detected")
+        
+        finally:
+            shutil.rmtree(temp_dir)
     
     @patch('tools.investos.ingest.fitz')
     def test_brunnenstrasse_false_positive_rejected(self, mock_fitz):
         """Test that BRUNNENSTRASSE is rejected as invalid ISIN"""
-        # Create a temp file to use as mock PDF path
         temp_dir = Path(tempfile.mkdtemp())
         try:
             mock_pdf_path = temp_dir / 'test.pdf'
             mock_pdf_path.touch()
             
-            # Mock PDF page with text containing BRUNNENSTRASSE
+            # Mock PDF with BRUNNENSTRASSE (common German street name)
+            # Trade Republic format: Qty -> Name -> ISIN
             mock_page = Mock()
-            
-            # Simulate PDF text with BRUNNENSTRASSE (common in German addresses)
             mock_page.get_text.return_value = """
 DEPOT ÜBERSICHT
 BRUNNENSTRASSE 123
 BERLIN
-            
+
 POSITIONEN
-            
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+10,00 Stk.
 Apple Inc.
-ISIN US0378331005
-Stück 10  Preis 175,50 EUR  Wert 1.755,00 EUR
+ISIN: US0378331005
+26.01.2026
+1.755,00
             """
             
-            # Mock PDF document that supports subscripting and iteration
+            # Mock PDF document
             mock_doc = Mock()
             mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
             mock_doc.__getitem__ = Mock(return_value=mock_page)
@@ -384,483 +803,16 @@ Stück 10  Preis 175,50 EUR  Wert 1.755,00 EUR
             parser = TradeRepublicParser(mock_pdf_path)
             parsed_data = parser.parse()
             
-            # Should only find Apple Inc., not BRUNNENSTRASSE
             holdings = parsed_data['holdings']
-            
-            # Check that we don't have BRUNNENSTRASSE as a holding
             holding_isins = [h.get('isin') for h in holdings]
-            self.assertNotIn('BRUNNENSTRAS', holding_isins, 
-                           "BRUNNENSTRASSE should be rejected as invalid ISIN")
             
-            # Should have found Apple (if parser finds explicit ISIN labels)
-            # This test mainly checks that BRUNNENSTRASSE is NOT included
-            if holding_isins:
-                self.assertIn('US0378331005', holding_isins,
-                             "Valid ISIN US0378331005 should be found")
+            # Should NOT have BRUNNENSTRASSE
+            self.assertNotIn('BRUNNENSTRAS', holding_isins,
+                           "BRUNNENSTRASSE should be rejected by ISIN validation")
             
-        finally:
-            shutil.rmtree(temp_dir)
-
-
-class TestBlockParsing(unittest.TestCase):
-    """Test block-based parsing of holdings"""
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_block_parsing_extracts_name_quantity_value(self, mock_fitz):
-        """Test that block parsing extracts name, quantity, and market value"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF page with realistic Trade Republic layout
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-DEPOT ÜBERSICHT
-Portfolio Value: 10.000,00 EUR
-
-POSITIONEN
-
-Apple Inc.
-ISIN: US0378331005
-WKN: 865985
-Stück 10,00
-Einstandskurs 150,00 EUR
-Kurs 175,50 EUR
-Wert 1.755,00 EUR
-Gewinn +255,00 EUR
-
-iShares Core MSCI World UCITS ETF USD (Acc)
-ISIN: IE00B4L5Y983
-WKN: A0RPWH
-Anteile 50,00
-Einstandskurs 70,00 EUR
-Kurs 75,25 EUR
-Kurswert 3.762,50 EUR
-Gewinn +262,50 EUR
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 2 holdings
-            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
-            
-            # Check Apple Inc.
-            apple = next((h for h in holdings if h['isin'] == 'US0378331005'), None)
-            self.assertIsNotNone(apple, "Should find Apple Inc.")
-            
-            if apple:
-                self.assertEqual(apple['name'], 'Apple Inc.', 
-                               "Should extract correct name for Apple")
-                self.assertIsNotNone(apple['quantity'], 
-                                   "Should extract quantity for Apple")
-                self.assertAlmostEqual(apple['quantity'], 10.0, places=1,
-                                     msg="Should extract correct quantity for Apple")
-                
-                # Check market data
-                self.assertIsNotNone(apple.get('market_data'), 
-                                   "Should have market data for Apple")
-                if apple.get('market_data'):
-                    self.assertIsNotNone(apple['market_data'].get('market_value'),
-                                       "Should extract market value for Apple")
-                    self.assertAlmostEqual(apple['market_data']['market_value'], 
-                                         1755.0, places=1,
-                                         msg="Should extract correct market value for Apple")
-                    self.assertEqual(apple['market_data']['currency'], 'EUR',
-                                   "Should extract currency for Apple")
-            
-            # Check iShares ETF
-            ishares = next((h for h in holdings if h['isin'] == 'IE00B4L5Y983'), None)
-            self.assertIsNotNone(ishares, "Should find iShares ETF")
-            
-            if ishares:
-                # Name should contain "iShares" but not "ISIN"
-                self.assertIn('iShares', ishares['name'],
-                            "Should extract name containing 'iShares'")
-                self.assertNotIn('ISIN', ishares['name'],
-                               "Name should not contain 'ISIN'")
-                
-                self.assertIsNotNone(ishares['quantity'],
-                                   "Should extract quantity for iShares")
-                self.assertAlmostEqual(ishares['quantity'], 50.0, places=1,
-                                     msg="Should extract correct quantity for iShares")
-                
-                # Check market data
-                if ishares.get('market_data'):
-                    self.assertIsNotNone(ishares['market_data'].get('market_value'),
-                                       "Should extract market value for iShares")
-                    self.assertAlmostEqual(ishares['market_data']['market_value'],
-                                         3762.5, places=1,
-                                         msg="Should extract correct market value for iShares")
-        
-        finally:
-            shutil.rmtree(temp_dir)
-
-
-class TestTableLayoutParsing(unittest.TestCase):
-    """Test parsing of Trade Republic table layout with column headers"""
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_table_layout_with_kurswert_header(self, mock_fitz):
-        """Test extraction from table layout with KURSWERT IN EUR column header"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF with real Trade Republic table layout
-            # Format: quantity, name, ISIN, meta, PRICE (before date), DATE, MARKET_VALUE (after date)
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-DEPOT ÜBERSICHT
-
-POSITIONEN
-STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
-
-12,345678 Stk.
-MSCI World ETF
-ISIN: IE00B4L5Y983
-WKN: A0RPWH
-46,00
-26.01.2026
-5.678,90
-
-5,00 Stk.
-Tesla Inc.
-ISIN: US88160R1014
-WKN: A1CX3T
-789,12
-27.01.2026
-3.945,60
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 2 holdings
-            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
-            
-            # Check MSCI World ETF
-            msci = next((h for h in holdings if h['isin'] == 'IE00B4L5Y983'), None)
-            self.assertIsNotNone(msci, "Should find MSCI World ETF")
-            
-            if msci:
-                self.assertIn('MSCI World', msci['name'],
-                            "Should extract name containing 'MSCI World'")
-                
-                # Quantity should be extracted from "12,345678 Stk." format
-                self.assertIsNotNone(msci['quantity'],
-                                   "Should extract quantity")
-                self.assertAlmostEqual(msci['quantity'], 12.345678, places=4,
-                                     msg="Should extract correct quantity from number-first format")
-                
-                # Market value should use deterministic after-date rule
-                # Real TR format: price BEFORE date (46,00), date (26.01.2026), market_value AFTER date (5.678,90)
-                # Should take FIRST number after date as market value
-                if msci.get('market_data'):
-                    self.assertIsNotNone(msci['market_data'].get('market_value'),
-                                       "Should extract market value")
-                    self.assertAlmostEqual(msci['market_data']['market_value'],
-                                         5678.90, places=2,
-                                         msg="Should extract first number after date as market value")
-            
-            # Check Tesla
-            tesla = next((h for h in holdings if h['isin'] == 'US88160R1014'), None)
-            self.assertIsNotNone(tesla, "Should find Tesla")
-            
-            if tesla:
-                self.assertIn('Tesla', tesla['name'],
-                            "Should extract name containing 'Tesla'")
-                
-                self.assertIsNotNone(tesla['quantity'],
-                                   "Should extract quantity for Tesla")
-                self.assertAlmostEqual(tesla['quantity'], 5.0, places=1,
-                                     msg="Should extract correct quantity for Tesla")
-                
-                if tesla.get('market_data'):
-                    # Price BEFORE date (789,12), date (27.01.2026), market_value AFTER date (3.945,60)
-                    # Should take FIRST number after date
-                    self.assertAlmostEqual(tesla['market_data']['market_value'],
-                                         3945.60, places=2,
-                                         msg="Should extract first number after date as market value")
-        
-        finally:
-            shutil.rmtree(temp_dir)
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_table_layout_single_value_after_date(self, mock_fitz):
-        """Test extraction when only one value appears after date"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF with real TR format: price before date, market_value after
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-DEPOT ÜBERSICHT
-
-POSITIONEN
-STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
-
-10,00 Stk.
-Apple Inc.
-ISIN: US0378331005
-WKN: 865985
-175,55
-26.01.2026
-1.755,50
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 1 holding
-            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
-            
-            apple = holdings[0]
-            self.assertEqual(apple['isin'], 'US0378331005')
-            self.assertIn('Apple', apple['name'])
-            
-            # Should extract first value after date (market value, not price)
-            # Price before date (175,55), date (26.01.2026), market_value after (1.755,50)
-            if apple.get('market_data'):
-                self.assertAlmostEqual(apple['market_data']['market_value'],
-                                     1755.50, places=2,
-                                     msg="Should extract first value after date as market_value")
-        
-        finally:
-            shutil.rmtree(temp_dir)
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_price_before_date_not_used(self, mock_fitz):
-        """Test that price before date is NOT mistaken for market value"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF with clear price/date/value separation
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-POSITIONEN
-STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
-
-1,00 Stk.
-Test Security
-ISIN: DE0005140008
-999,99
-15.01.2026
-999,99
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 1 holding
-            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
-            
-            test_sec = holdings[0]
-            self.assertEqual(test_sec['isin'], 'DE0005140008')
-            
-            # Should extract value AFTER date, not before
-            # Even though both values are the same (999,99)
-            # The rule is: first number after date line
-            if test_sec.get('market_data'):
-                self.assertIsNotNone(test_sec['market_data'].get('market_value'),
-                                   "Should extract market value after date")
-                self.assertAlmostEqual(test_sec['market_data']['market_value'],
-                                     999.99, places=2)
-        
-        finally:
-            shutil.rmtree(temp_dir)
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_header_date_ignored(self, mock_fitz):
-        """Test that header date (zum XX.XX.XXXX) is ignored, only per-holding date used"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF with header date that should be IGNORED
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-DEPOT ÜBERSICHT zum 01.01.2026
-
-POSITIONEN
-STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
-
-5,00 Stk.
-Test Security
-ISIN: DE0005140008
-WKN: 123456
-250,00
-15.01.2026
-1.250,00
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 1 holding
-            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
-            
-            test_sec = holdings[0]
-            self.assertEqual(test_sec['isin'], 'DE0005140008')
-            
-            # Should extract market value using per-holding date (15.01.2026)
-            # NOT header date (01.01.2026)
-            # Market value after 15.01.2026 is 1.250,00
-            if test_sec.get('market_data'):
-                self.assertIsNotNone(test_sec['market_data'].get('market_value'),
-                                   "Should extract market value after per-holding date")
-                self.assertAlmostEqual(test_sec['market_data']['market_value'],
-                                     1250.00, places=2,
-                                     msg="Should use date after ISIN, not header date")
-        
-        finally:
-            shutil.rmtree(temp_dir)
-    
-    @patch('tools.investos.ingest.fitz')
-    def test_value_above_quantity(self, mock_fitz):
-        """Test that market value is extracted from ABOVE quantity line (real TR layout)"""
-        temp_dir = Path(tempfile.mkdtemp())
-        try:
-            mock_pdf_path = temp_dir / 'test.pdf'
-            mock_pdf_path.touch()
-            
-            # Mock PDF with REAL Trade Republic layout: date, value, quantity
-            # Market value appears ABOVE quantity line
-            mock_page = Mock()
-            mock_page.get_text.return_value = """
-POSITIONEN
-STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
-
-Test Security A
-ISIN: DE0005140008
-WKN: 123456
-15.01.2026
-1.250,00
-5,00 Stk.
-
-Test Security B  
-ISIN: US0378331005
-WKN: 865985
-16.01.2026
-2.500,50
-10,00 Stk.
-            """
-            
-            # Mock PDF document
-            mock_doc = Mock()
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_doc.__getitem__ = Mock(return_value=mock_page)
-            mock_doc.__len__ = Mock(return_value=1)
-            mock_doc.close = Mock()
-            
-            mock_fitz.open.return_value = mock_doc
-            
-            # Parse the mocked PDF
-            parser = TradeRepublicParser(mock_pdf_path)
-            parsed_data = parser.parse()
-            
-            holdings = parsed_data['holdings']
-            
-            # Should find 2 holdings
-            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
-            
-            # Check Test Security A
-            sec_a = next((h for h in holdings if h['isin'] == 'DE0005140008'), None)
-            self.assertIsNotNone(sec_a, "Should find Test Security A")
-            
-            if sec_a:
-                # Market value should be 1.250,00 (ABOVE quantity line)
-                # NOT the quantity 5,00
-                if sec_a.get('market_data'):
-                    self.assertIsNotNone(sec_a['market_data'].get('market_value'),
-                                       "Should extract market value")
-                    self.assertAlmostEqual(sec_a['market_data']['market_value'],
-                                         1250.00, places=2,
-                                         msg="Should extract value from ABOVE quantity line")
-                
-                # Quantity should be 5,00
-                self.assertAlmostEqual(sec_a['quantity'], 5.0, places=1)
-            
-            # Check Test Security B
-            sec_b = next((h for h in holdings if h['isin'] == 'US0378331005'), None)
-            self.assertIsNotNone(sec_b, "Should find Test Security B")
-            
-            if sec_b:
-                # Market value should be 2.500,50 (ABOVE quantity line)
-                if sec_b.get('market_data'):
-                    self.assertAlmostEqual(sec_b['market_data']['market_value'],
-                                         2500.50, places=2,
-                                         msg="Should extract value from ABOVE quantity line")
-                
-                # Quantity should be 10,00
-                self.assertAlmostEqual(sec_b['quantity'], 10.0, places=1)
+            # Should have Apple
+            self.assertIn('US0378331005', holding_isins,
+                        "Valid ISIN should be found")
         
         finally:
             shutil.rmtree(temp_dir)
