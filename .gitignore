@@ -1,0 +1,117 @@
+# OS and Editor Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary Files
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+
+# Runtime Data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage Directory
+coverage/
+*.lcov
+
+# Dependency Directories
+node_modules/
+bower_components/
+vendor/
+.bundle/
+
+# Build Outputs
+dist/
+build/
+out/
+*.tgz
+*.tar.gz
+
+# Environment Files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Configuration Files with Secrets
+config/secrets/
+*.key
+*.pem
+*.p12
+*.crt
+*.pfx
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+
+# Logs
+logs/
+*.log
+
+# Personal Data (NEVER commit)
+portfolio/
+personal/
+sensitive/
+private/
+
+# Trade Republic Data (until processed)
+raw_exports/
+downloads/
+*.csv.imported
+
+# Analysis Outputs (until committed)
+drafts/
+work-in-progress/
+temp_analysis/
+
+# Backup Files
+*.bak
+*.backup
+*.old
+
+# Generated Documentation
+docs/generated/
+api-docs/
+
+# Test Files
+test-results/
+coverage/
+*.test.log
+
+# Local Development
+.local/
+local/
+dev/
+
+# OS Generated Files
+.DS_Store?
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
