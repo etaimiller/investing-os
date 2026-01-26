@@ -378,8 +378,8 @@ class TradeRepublicParser:
         isin_offset_in_block = isin_line_idx - block_start
         
         name = self._extract_name(block_lines, isin_offset_in_block, isin)
-        quantity, qty_method = self._extract_quantity_with_meta(block_lines, block_start)
-        market_value, mv_method = self._extract_market_value_with_meta(block_lines, block_start, isin_offset_in_block)
+        quantity, qty_method, qty_line_offset = self._extract_quantity_with_meta(block_lines, block_start)
+        market_value, mv_method = self._extract_market_value_with_meta(block_lines, block_start, isin_offset_in_block, qty_line_offset)
         currency = self._extract_currency(block_text)
         
         # Debug output for extraction methods (first 2 holdings only)
@@ -474,10 +474,10 @@ class TradeRepublicParser:
         
         return None
     
-    def _extract_quantity_with_meta(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+    def _extract_quantity_with_meta(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str], Optional[int]]:
         """
         Extract quantity with metadata about extraction method.
-        Returns: (quantity, method_description)
+        Returns: (quantity, method_description, line_offset_in_block)
         """
         # Pattern 1: Number-first format (preferred for Trade Republic table layout)
         # Example: "12,345678 Stk."
@@ -492,7 +492,7 @@ class TradeRepublicParser:
                 qty = self._parse_number(qty_str)
                 if qty is not None and qty > 0:
                     line_num = block_start + i
-                    return qty, f"number-first line {line_num}"
+                    return qty, f"number-first line {line_num}", i  # Return offset in block
         
         # Pattern 2: Label-first format (fallback)
         # Example: "Stück 10,00" or "Anteile: 50,00"
@@ -507,11 +507,11 @@ class TradeRepublicParser:
                 qty_str = match.group(1)
                 qty = self._parse_number(qty_str)
                 if qty is not None and qty > 0:
-                    return qty, "label-first pattern"
+                    return qty, "label-first pattern", None  # No line offset for text search
         
-        return None, None
+        return None, None, None
     
-    def _extract_market_value_with_meta(self, block_lines: List[str], block_start: int, isin_offset: int) -> Tuple[Optional[float], Optional[str]]:
+    def _extract_market_value_with_meta(self, block_lines: List[str], block_start: int, isin_offset: int, qty_line_offset: Optional[int]) -> Tuple[Optional[float], Optional[str]]:
         """
         Extract market value with metadata about extraction method.
         
@@ -519,6 +519,7 @@ class TradeRepublicParser:
             block_lines: Lines in the block
             block_start: Absolute line index where block starts
             isin_offset: Offset of ISIN line within block_lines
+            qty_line_offset: Offset of quantity line within block_lines (None if not found)
         
         Returns: (market_value, method_description)
         """
@@ -528,26 +529,77 @@ class TradeRepublicParser:
         has_kurswert_header = bool(re.search(r'\bKURSWERT\s+IN\s+EUR\b', block_text, re.IGNORECASE))
         
         if has_kurswert_header:
-            # Table layout: use column-based extraction
-            return self._extract_market_value_column_based(block_lines, block_start, isin_offset)
+            # Table layout: use column-based extraction with quantity anchor
+            return self._extract_market_value_column_based(block_lines, block_start, isin_offset, qty_line_offset)
         
         # Fallback: labeled pattern extraction
         return self._extract_market_value_labeled(block_lines, block_start)
     
-    def _extract_market_value_column_based(self, block_lines: List[str], block_start: int, isin_offset: int) -> Tuple[Optional[float], Optional[str]]:
+    def _extract_market_value_column_based(self, block_lines: List[str], block_start: int, isin_offset: int, qty_line_offset: Optional[int]) -> Tuple[Optional[float], Optional[str]]:
         """
-        Extract market value using deterministic after-date rule.
+        Extract market value using quantity line anchor (PRIMARY) or date fallback (SECONDARY).
         
         For Trade Republic table layout:
-        - Fixed format: quantity, name, ISIN, metadata, price, date, market_value
-        - ALWAYS two numbers per holding: price before date, market_value after date
-        - Rule: Take FIRST parseable number AFTER the date line
+        - Market value appears ABOVE quantity line
+        - Quantity line "<number> Stk." is the most reliable anchor
         
-        Critical: Only accept dates that occur AFTER the ISIN line to avoid
-        matching header dates like "... zum 26.01.2026"
+        Priority:
+        A) PRIMARY: Scan UPWARDS from quantity line, take first money-like number
+        B) SECONDARY: Fallback to after-date logic if (A) fails
         """
-        # Find date line (DD.MM.YYYY format) - scan forward from ISIN
-        # ONLY consider dates AFTER the ISIN line (ignore header dates)
+        # Money pattern: accept German, plain, and dot-decimal formats
+        # Examples: "1.234,56" or "1234,56" or "1234.56"
+        money_pattern = re.compile(r'\b([0-9]+(?:[.,][0-9]+)*)\b')
+        
+        # Quantity line pattern for safety checks
+        qty_line_pattern = re.compile(r'\b(Stk\.?|Stück|Anteile)\b', re.IGNORECASE)
+        
+        # ISIN line pattern for safety checks
+        isin_pattern = re.compile(r'\bISIN\s*:', re.IGNORECASE)
+        
+        # PRIMARY: Try above-quantity extraction
+        if qty_line_offset is not None:
+            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                print(f"[DEBUG] Quantity line offset: {qty_line_offset}")
+            
+            # Scan UPWARDS from quantity line - 1
+            for i in range(qty_line_offset - 1, -1, -1):
+                line = block_lines[i]
+                
+                # Stop at another quantity line
+                if qty_line_pattern.search(line):
+                    break
+                
+                # Stop at ISIN line
+                if isin_pattern.search(line):
+                    break
+                
+                # Stop at header keywords
+                if re.search(r'\b(Lagerland|Depot|Position|zum)\b', line, re.IGNORECASE):
+                    break
+                
+                # Find first money-like number in this line
+                match = money_pattern.search(line)
+                if match:
+                    num_str = match.group(1)
+                    # Must have separator to be money-like (not a year or counter)
+                    if ',' in num_str or '.' in num_str:
+                        market_value = self._parse_number(num_str)
+                        if market_value is not None and market_value > 0:
+                            line_num = block_start + i
+                            
+                            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                                redacted_line = self._redact_line(line.strip())
+                                print(f"[DEBUG] Market value line {line_num} (above quantity): {redacted_line[:60]}")
+                                print(f"[DEBUG] Extracted market_value: {market_value} (above-quantity deterministic)")
+                            
+                            return market_value, f"above-quantity-deterministic line {line_num}"
+            
+            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                print(f"[DEBUG] No market value found above quantity line, trying after-date fallback")
+        
+        # SECONDARY: Fallback to after-date logic
+        # Find date line (DD.MM.YYYY format) - ONLY after ISIN
         date_pattern = re.compile(r'\b\d{2}\.\d{2}\.\d{4}\b')
         date_line_idx = None
         
@@ -557,25 +609,14 @@ class TradeRepublicParser:
                 date_line_idx = i
                 break
         
-        # If no date found after ISIN, cannot extract market value deterministically
+        # If no date found after ISIN, cannot extract market value
         if date_line_idx is None:
             if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
                 print(f"[DEBUG] ISIN line offset: {isin_offset}")
                 print(f"[DEBUG] No per-holding date found after ISIN - cannot extract market_value")
             return None, None
         
-        # Debug output for first 3 holdings
-        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-            print(f"[DEBUG] ISIN line offset: {isin_offset}")
-            date_line_text = block_lines[date_line_idx].strip()
-            print(f"[DEBUG] Date line at offset {date_line_idx} (after ISIN): {self._redact_line(date_line_text)}")
-        
-        # Money pattern: accept German, plain, and dot-decimal formats
-        # Examples: "1.234,56" or "1234,56" or "1234.56"
-        money_pattern = re.compile(r'\b([0-9]+(?:[.,][0-9]+)*)\b')
-        
         # Scan forward from date+1 to date+6 for FIRST parseable number
-        # This is the market value (KURSWERT IN EUR column)
         scan_start = date_line_idx + 1
         scan_end = min(date_line_idx + 7, len(block_lines))
         
@@ -594,16 +635,16 @@ class TradeRepublicParser:
                         
                         if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
                             redacted_line = self._redact_line(line.strip())
-                            print(f"[DEBUG] Market value line {line_num}: {redacted_line[:60]}")
-                            print(f"[DEBUG] Extracted market_value: {market_value} (after-date deterministic)")
+                            print(f"[DEBUG] Market value line {line_num} (after date): {redacted_line[:60]}")
+                            print(f"[DEBUG] Extracted market_value: {market_value} (after-date fallback)")
                         
-                        return market_value, f"after-date-deterministic line {line_num}"
+                        return market_value, f"after-date-fallback line {line_num}"
         
-        # No parseable number found after date within window
+        # No parseable number found
         if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-            print(f"[DEBUG] No money-like number found in lines {scan_start}-{scan_end-1}")
+            print(f"[DEBUG] No market value found (tried both above-quantity and after-date)")
         
-        self.warnings.append("market_value not found after date")
+        self.warnings.append("market_value not found")
         return None, None
     
     def _extract_market_value_labeled(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:

@@ -782,6 +782,88 @@ WKN: 123456
         
         finally:
             shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_value_above_quantity(self, mock_fitz):
+        """Test that market value is extracted from ABOVE quantity line (real TR layout)"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with REAL Trade Republic layout: date, value, quantity
+            # Market value appears ABOVE quantity line
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+Test Security A
+ISIN: DE0005140008
+WKN: 123456
+15.01.2026
+1.250,00
+5,00 Stk.
+
+Test Security B  
+ISIN: US0378331005
+WKN: 865985
+16.01.2026
+2.500,50
+10,00 Stk.
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 2 holdings
+            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
+            
+            # Check Test Security A
+            sec_a = next((h for h in holdings if h['isin'] == 'DE0005140008'), None)
+            self.assertIsNotNone(sec_a, "Should find Test Security A")
+            
+            if sec_a:
+                # Market value should be 1.250,00 (ABOVE quantity line)
+                # NOT the quantity 5,00
+                if sec_a.get('market_data'):
+                    self.assertIsNotNone(sec_a['market_data'].get('market_value'),
+                                       "Should extract market value")
+                    self.assertAlmostEqual(sec_a['market_data']['market_value'],
+                                         1250.00, places=2,
+                                         msg="Should extract value from ABOVE quantity line")
+                
+                # Quantity should be 5,00
+                self.assertAlmostEqual(sec_a['quantity'], 5.0, places=1)
+            
+            # Check Test Security B
+            sec_b = next((h for h in holdings if h['isin'] == 'US0378331005'), None)
+            self.assertIsNotNone(sec_b, "Should find Test Security B")
+            
+            if sec_b:
+                # Market value should be 2.500,50 (ABOVE quantity line)
+                if sec_b.get('market_data'):
+                    self.assertAlmostEqual(sec_b['market_data']['market_value'],
+                                         2500.50, places=2,
+                                         msg="Should extract value from ABOVE quantity line")
+                
+                # Quantity should be 10,00
+                self.assertAlmostEqual(sec_b['quantity'], 10.0, places=1)
+        
+        finally:
+            shutil.rmtree(temp_dir)
 
 
 class TestSnapshotSchemaCompliance(unittest.TestCase):
