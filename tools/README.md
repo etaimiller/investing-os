@@ -1,9 +1,150 @@
 # Tools Directory
 
-This directory contains standalone tools, utilities, and helper scripts.
+This directory contains the Investment OS CLI and supporting utilities.
+
+## Investment OS CLI (`investos`)
+
+The `investos` CLI is the primary interface to the Investment OS. It provides a structured "syscall" interface for all repository operations.
+
+### Installation
+
+**Requirements**: Python 3.7+
+
+The CLI uses Python's standard library only - no external dependencies required.
+
+**From repository root**:
+```bash
+# Make CLI executable (already done if you cloned repo)
+chmod +x bin/investos
+
+# Run from repo root
+./bin/investos --help
+
+# Or add to PATH for convenience
+export PATH="$PATH:$(pwd)/bin"
+investos --help
+```
+
+**Optional: Use virtual environment**:
+```bash
+# Create venv (optional but recommended)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# CLI still works the same way
+./bin/investos --help
+```
+
+### Available Commands
+
+#### `investos status`
+Show repository status:
+- Latest portfolio snapshot
+- Raw PDF count
+- Last run log
+
+```bash
+./bin/investos status
+```
+
+#### `investos doctor`
+Run health checks:
+- Verify directory structure
+- Check required files exist
+- Validate JSON schemas
+- Check portfolio snapshots
+
+```bash
+./bin/investos doctor
+```
+
+#### `investos validate`
+Validate JSON files:
+```bash
+# With schema validation
+./bin/investos validate --file portfolio/snapshots/2024-01-15-143022.json \
+                        --schema schema/portfolio-state.schema.json
+
+# JSON syntax only (no schema)
+./bin/investos validate --file valuations/inputs/AAPL.json
+```
+
+**Note**: Full JSON Schema Draft-07 validation will be enabled in Step 4/5 with jsonschema library. Currently performs basic structure validation.
+
+#### `investos scaffold decision`
+Create decision memo template:
+```bash
+./bin/investos scaffold decision --ticker AAPL
+# Creates: decisions/2024-01-15_AAPL_decision.md
+```
+
+#### `investos scaffold valuation`
+Create valuation input template:
+```bash
+./bin/investos scaffold valuation --ticker AAPL
+# Creates: valuations/inputs/AAPL.json
+```
+
+#### `investos scaffold dossier`
+Create research dossier:
+```bash
+./bin/investos scaffold dossier --ticker AAPL
+# Creates: research/AAPL/dossier.md
+#          research/AAPL/README.md
+```
+
+### Structured Logging
+
+All CLI operations write structured JSON logs to `logs/runs/YYYY-MM-DD/HHMMSS_<command>.json`
+
+**Log format**:
+```json
+{
+  "timestamp": "2024-01-15T14:30:22Z",
+  "command": "scaffold_decision",
+  "args": ["--ticker", "AAPL"],
+  "repo_root": "/path/to/investing-os",
+  "paths_touched": ["decisions/2024-01-15_AAPL_decision.md"],
+  "outcome": "success",
+  "errors": [],
+  "warnings": [],
+  "info": {
+    "ticker": "AAPL",
+    "filepath": "decisions/2024-01-15_AAPL_decision.md"
+  },
+  "duration_ms": 45
+}
+```
+
+Logs provide complete audit trail but **do NOT replace decision memos** - they're for system operations only.
+
+### Configuration
+
+CLI reads `config.json` at repository root. See `config.json` for settings:
+- Timezone (default: Africa/Johannesburg)
+- Base currency (default: EUR)
+- Directory paths
+- Default assumption files
+
+## CLI Package Structure
+
+```
+tools/
+├── investos/              # Python package
+│   ├── __init__.py       # Package metadata
+│   ├── cli.py            # Main CLI entrypoint
+│   ├── config.py         # Configuration loader
+│   ├── logging.py        # Structured logging
+│   ├── doctor.py         # Health checks
+│   ├── validate.py       # JSON validation
+│   ├── scaffold.py       # Template scaffolding
+│   └── utils.py          # Common utilities
+└── README.md             # This file
+```
 
 ## What Belongs Here
 
+- **Investment OS CLI** - Primary system interface
 - **Data processing tools** - Utilities for data transformation and validation
 - **Analysis helpers** - Tools to support analysis workflows
 - **System utilities** - Maintenance and administration tools

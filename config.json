@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "description": "Investment OS configuration",
+  "timezone": "Africa/Johannesburg",
+  "base_currency": "EUR",
+  "portfolio": {
+    "raw_dir": "portfolio/raw",
+    "snapshots_dir": "portfolio/snapshots"
+  },
+  "schema_dir": "schema",
+  "valuations": {
+    "default_assumptions_file": "valuations/assumptions/conservative.yaml"
+  },
+  "monitoring": {
+    "watch_rules_file": "monitoring/watch_rules.yaml"
+  },
+  "logs": {
+    "runs_dir": "logs/runs"
+  },
+  "_comments": {
+    "timezone": "TODO: Confirm timezone (default: Africa/Johannesburg)",
+    "base_currency": "TODO: Confirm base currency (default: EUR)",
+    "portfolio_dirs": "TODO: Adjust paths if needed for your setup"
+  }
+}
