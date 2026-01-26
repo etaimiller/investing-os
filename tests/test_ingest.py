@@ -521,28 +521,29 @@ class TestTableLayoutParsing(unittest.TestCase):
             mock_pdf_path = temp_dir / 'test.pdf'
             mock_pdf_path.touch()
             
-            # Mock PDF with table layout (number-first quantity, column headers)
+            # Mock PDF with real Trade Republic table layout
+            # Format: quantity, name, ISIN, meta, PRICE (before date), DATE, MARKET_VALUE (after date)
             mock_page = Mock()
             mock_page.get_text.return_value = """
 DEPOT ÜBERSICHT
 
 POSITIONEN
-                                        KURSWERT IN EUR
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
 
+12,345678 Stk.
 MSCI World ETF
 ISIN: IE00B4L5Y983
 WKN: A0RPWH
-12,345678 Stk.
+46,00
 26.01.2026
-1.234,56
 5.678,90
 
+5,00 Stk.
 Tesla Inc.
 ISIN: US88160R1014
 WKN: A1CX3T
-5,00 Stk.
-27.01.2026
 789,12
+27.01.2026
 3.945,60
             """
             
@@ -578,15 +579,15 @@ WKN: A1CX3T
                 self.assertAlmostEqual(msci['quantity'], 12.345678, places=4,
                                      msg="Should extract correct quantity from number-first format")
                 
-                # Market value should use largest-after-date heuristic
-                # After date 26.01.2026, there are two numbers: 1.234,56 (price) and 5.678,90 (total value)
-                # Should choose the LARGEST as market value
+                # Market value should use deterministic after-date rule
+                # Real TR format: price BEFORE date (46,00), date (26.01.2026), market_value AFTER date (5.678,90)
+                # Should take FIRST number after date as market value
                 if msci.get('market_data'):
                     self.assertIsNotNone(msci['market_data'].get('market_value'),
                                        "Should extract market value")
                     self.assertAlmostEqual(msci['market_data']['market_value'],
                                          5678.90, places=2,
-                                         msg="Should extract largest number after date as market value")
+                                         msg="Should extract first number after date as market value")
             
             # Check Tesla
             tesla = next((h for h in holdings if h['isin'] == 'US88160R1014'), None)
@@ -602,11 +603,11 @@ WKN: A1CX3T
                                      msg="Should extract correct quantity for Tesla")
                 
                 if tesla.get('market_data'):
-                    # After date 27.01.2026, two numbers: 789,12 (price) and 3.945,60 (total value)
-                    # Should choose the LARGEST
+                    # Price BEFORE date (789,12), date (27.01.2026), market_value AFTER date (3.945,60)
+                    # Should take FIRST number after date
                     self.assertAlmostEqual(tesla['market_data']['market_value'],
                                          3945.60, places=2,
-                                         msg="Should extract largest number after date as market value")
+                                         msg="Should extract first number after date as market value")
         
         finally:
             shutil.rmtree(temp_dir)
@@ -619,18 +620,19 @@ WKN: A1CX3T
             mock_pdf_path = temp_dir / 'test.pdf'
             mock_pdf_path.touch()
             
-            # Mock PDF with only one value after date (simpler layout)
+            # Mock PDF with real TR format: price before date, market_value after
             mock_page = Mock()
             mock_page.get_text.return_value = """
 DEPOT ÜBERSICHT
 
 POSITIONEN
-                                        KURSWERT IN EUR
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
 
+10,00 Stk.
 Apple Inc.
 ISIN: US0378331005
 WKN: 865985
-10,00 Stk.
+175,55
 26.01.2026
 1.755,50
             """
@@ -657,11 +659,67 @@ WKN: 865985
             self.assertEqual(apple['isin'], 'US0378331005')
             self.assertIn('Apple', apple['name'])
             
-            # Should extract the single value after date
+            # Should extract first value after date (market value, not price)
+            # Price before date (175,55), date (26.01.2026), market_value after (1.755,50)
             if apple.get('market_data'):
                 self.assertAlmostEqual(apple['market_data']['market_value'],
                                      1755.50, places=2,
-                                     msg="Should extract single value after date")
+                                     msg="Should extract first value after date as market_value")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_price_before_date_not_used(self, mock_fitz):
+        """Test that price before date is NOT mistaken for market value"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with clear price/date/value separation
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+1,00 Stk.
+Test Security
+ISIN: DE0005140008
+999,99
+15.01.2026
+999,99
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 1 holding
+            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
+            
+            test_sec = holdings[0]
+            self.assertEqual(test_sec['isin'], 'DE0005140008')
+            
+            # Should extract value AFTER date, not before
+            # Even though both values are the same (999,99)
+            # The rule is: first number after date line
+            if test_sec.get('market_data'):
+                self.assertIsNotNone(test_sec['market_data'].get('market_value'),
+                                   "Should extract market value after date")
+                self.assertAlmostEqual(test_sec['market_data']['market_value'],
+                                     999.99, places=2)
         
         finally:
             shutil.rmtree(temp_dir)

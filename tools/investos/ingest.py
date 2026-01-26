@@ -527,14 +527,14 @@ class TradeRepublicParser:
     
     def _extract_market_value_column_based(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
         """
-        Extract market value using column header and date heuristics.
+        Extract market value using deterministic after-date rule.
         
         For Trade Republic table layout:
-        - Columns: "KURS PRO STÜCK" and "KURSWERT IN EUR"
-        - After date, typically see: price-per-unit, then total market value
-        - Choose largest as market value
+        - Fixed format: quantity, name, ISIN, metadata, price, date, market_value
+        - ALWAYS two numbers per holding: price before date, market_value after date
+        - Rule: Take FIRST parseable number AFTER the date line
         """
-        # Find date lines (DD.MM.YYYY format)
+        # Find date line (DD.MM.YYYY format) - scan forward from ISIN
         date_pattern = re.compile(r'\b\d{2}\.\d{2}\.\d{4}\b')
         date_line_idx = None
         
@@ -543,95 +543,51 @@ class TradeRepublicParser:
                 date_line_idx = i
                 break
         
-        # Broader money parsing: accept German, plain, and dot-decimal formats
-        # Examples: "1.234,56" or "1234,56" or "1234.56"
-        money_pattern = re.compile(r'\b([0-9]+(?:[.,][0-9]+)*)\b')
-        qty_line_pattern = re.compile(r'^\s*[0-9][0-9\.,]*\s*(Stk\.?|Stück|Anteile)\s*$', re.IGNORECASE)
-        
-        # Extract all money-like numbers with their line indices
-        money_candidates = []
-        for i, line in enumerate(block_lines):
-            # Skip quantity lines
-            if qty_line_pattern.match(line):
-                continue
-            
-            # Find all numbers in this line
-            for match in money_pattern.finditer(line):
-                num_str = match.group(1)
-                # Must have at least one separator (. or ,) to be money-like
-                if ',' in num_str or '.' in num_str:
-                    num = self._parse_number(num_str)
-                    if num is not None and num > 0:
-                        money_candidates.append((i, num, num_str))
+        # If no date found, cannot extract market value deterministically
+        if date_line_idx is None:
+            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                print(f"[DEBUG] No date line found - cannot extract market_value")
+            return None, None
         
         # Debug output for first 3 holdings
         if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-            if date_line_idx is not None:
-                print(f"[DEBUG] Date line found at index {date_line_idx}: {block_lines[date_line_idx][:50]}")
-            else:
-                print(f"[DEBUG] No date line found")
-            
-            if money_candidates:
-                print(f"[DEBUG] Money candidates: {len(money_candidates)}")
-                for idx, val, orig_str in money_candidates[:5]:  # Show first 5
-                    print(f"[DEBUG]   line {block_start + idx}: {orig_str} -> {val}")
+            date_line_text = block_lines[date_line_idx].strip()
+            print(f"[DEBUG] Date line at index {date_line_idx}: {self._redact_line(date_line_text)}")
         
-        if not money_candidates:
-            if self.debug:
-                print(f"[DEBUG] No money candidates found")
-            return None, None
+        # Money pattern: accept German, plain, and dot-decimal formats
+        # Examples: "1.234,56" or "1234,56" or "1234.56"
+        money_pattern = re.compile(r'\b([0-9]+(?:[.,][0-9]+)*)\b')
         
-        # NEW HEURISTIC: If there's a date, look at next 4 lines after date
-        if date_line_idx is not None:
-            # Get candidates from next 4 lines after date
-            after_date_candidates = [
-                (idx, val, orig_str) for idx, val, orig_str in money_candidates
-                if idx > date_line_idx and idx <= date_line_idx + 4
-            ]
-            
-            if len(after_date_candidates) >= 2:
-                # Multiple candidates: choose the LARGEST (likely market value, not price-per-unit)
-                largest_idx, largest_val, largest_str = max(after_date_candidates, key=lambda x: x[1])
-                line_num = block_start + largest_idx
-                
-                if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-                    print(f"[DEBUG] Selected largest of {len(after_date_candidates)} after-date candidates: {largest_val}")
-                
-                return largest_val, f"largest-after-date line {line_num}"
-            
-            elif len(after_date_candidates) == 1:
-                # Single candidate: use it
-                idx, val, orig_str = after_date_candidates[0]
-                line_num = block_start + idx
-                
-                if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-                    print(f"[DEBUG] Single candidate after date: {val}")
-                
-                return val, f"single-after-date line {line_num}"
-            
-            # else: fall through to no-date fallback
+        # Scan forward from date+1 to date+6 for FIRST parseable number
+        # This is the market value (KURSWERT IN EUR column)
+        scan_start = date_line_idx + 1
+        scan_end = min(date_line_idx + 7, len(block_lines))
         
-        # Fallback: No date or no candidates after date
-        # Choose the largest money-like number in entire block (excluding quantity)
-        if money_candidates:
-            largest_idx, largest_val, largest_str = max(money_candidates, key=lambda x: x[1])
-            line_num = block_start + largest_idx
+        for i in range(scan_start, scan_end):
+            line = block_lines[i]
             
-            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-                if date_line_idx is None:
-                    print(f"[DEBUG] No date - using largest in block: {largest_val}")
-                else:
-                    print(f"[DEBUG] No candidates after date - using largest in block: {largest_val}")
-            
-            # Add warning if date was expected but missing
-            if date_line_idx is None and hasattr(self, 'warnings'):
-                # Only warn once per parse
-                if not hasattr(self, '_warned_no_date'):
-                    self.warnings.append("No date lines found in table layout, using fallback for market value")
-                    self._warned_no_date = True
-            
-            return largest_val, f"largest-in-block line {line_num}"
+            # Find first money-like number in this line
+            match = money_pattern.search(line)
+            if match:
+                num_str = match.group(1)
+                # Must have separator to be money-like
+                if ',' in num_str or '.' in num_str:
+                    market_value = self._parse_number(num_str)
+                    if market_value is not None and market_value > 0:
+                        line_num = block_start + i
+                        
+                        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                            redacted_line = self._redact_line(line.strip())
+                            print(f"[DEBUG] Market value line {line_num}: {redacted_line[:60]}")
+                            print(f"[DEBUG] Extracted market_value: {market_value} (after-date deterministic)")
+                        
+                        return market_value, f"after-date-deterministic line {line_num}"
         
+        # No parseable number found after date within window
+        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+            print(f"[DEBUG] No money-like number found in lines {scan_start}-{scan_end-1}")
+        
+        self.warnings.append("market_value not found after date")
         return None, None
     
     def _extract_market_value_labeled(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
