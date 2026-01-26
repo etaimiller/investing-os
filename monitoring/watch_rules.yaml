@@ -1,0 +1,208 @@
+# Portfolio Monitoring Watch Rules
+# These rules define when the system should generate alerts or flag items for review
+# All rules are for ALERTING only - never for automated trading
+
+# Metadata
+version: 1.0.0
+last_updated: 2024-01-15
+description: Conservative monitoring rules for portfolio tracking and alerts
+
+# Price Movement Rules
+# Alert when holdings prices move significantly
+price_movements:
+  single_day:
+    enabled: true
+    threshold_percent: 5.0  # Alert on 5%+ single-day moves
+    rationale: "Significant single-day moves warrant investigation of cause"
+    
+  multi_day:
+    enabled: true
+    period_days: 5
+    threshold_percent: 10.0  # Alert on 10%+ moves over 5 days
+    rationale: "Sustained price moves may indicate fundamental changes"
+    
+  from_intrinsic_value:
+    enabled: true
+    undervalued_threshold_percent: 20.0  # Alert when price drops 20%+ below intrinsic value
+    overvalued_threshold_percent: 20.0  # Alert when price rises 20%+ above intrinsic value
+    rationale: "Significant divergence from intrinsic value creates opportunities or risks"
+
+# Portfolio Allocation Rules
+# Alert when portfolio drifts from targets or concentrations
+allocation:
+  position_concentration:
+    enabled: true
+    max_single_position_percent: 15.0  # Alert if any position exceeds 15% of portfolio
+    rationale: "Avoid over-concentration in single security"
+    
+  cash_allocation:
+    enabled: true
+    min_cash_percent: 5.0   # Alert if cash drops below 5%
+    max_cash_percent: 30.0  # Alert if cash exceeds 30%
+    rationale: "Maintain liquidity buffer but stay invested"
+    
+  sector_concentration:
+    enabled: false  # TODO: Enable when sector data available
+    max_sector_percent: 30.0
+    rationale: "Avoid over-concentration in single sector"
+
+# Valuation Change Rules
+# Alert when intrinsic value estimates change significantly
+valuation_changes:
+  intrinsic_value_revision:
+    enabled: true
+    threshold_percent: 15.0  # Alert on 15%+ changes to intrinsic value estimate
+    rationale: "Material valuation changes require decision review"
+    
+  margin_of_safety_erosion:
+    enabled: true
+    warning_threshold: 0.10  # Alert when margin of safety drops below 10%
+    rationale: "Eroding margin of safety may warrant selling"
+    
+  overvaluation:
+    enabled: true
+    threshold_percent: 20.0  # Alert when price exceeds intrinsic value by 20%+
+    rationale: "Significant overvaluation may be opportunity to trim or sell"
+
+# Corporate Action Rules
+# Alert on corporate actions affecting holdings
+corporate_actions:
+  enabled: true
+  
+  alert_on:
+    - dividend_announcements
+    - stock_splits
+    - mergers_acquisitions
+    - management_changes
+    - earnings_releases
+    - guidance_changes
+    
+  rationale: "Corporate actions may require portfolio decision review"
+
+# Performance Tracking Rules
+# Monitor portfolio and individual position performance
+performance:
+  portfolio_drawdown:
+    enabled: true
+    alert_threshold_percent: 10.0  # Alert on 10%+ drawdown from peak
+    rationale: "Significant drawdowns warrant portfolio review"
+    
+  position_performance:
+    enabled: true
+    underperformance_period_days: 180  # 6 months
+    underperformance_threshold_percent: -20.0  # Alert on 20%+ underperformance vs market
+    rationale: "Persistent underperformance may indicate thesis break"
+    
+  portfolio_vs_benchmark:
+    enabled: false  # TODO: Enable when benchmark data available
+    period_days: 365
+    underperformance_threshold_percent: -5.0
+
+# Risk Monitoring Rules
+# Track portfolio risk metrics
+risk_metrics:
+  volatility:
+    enabled: false  # TODO: Enable when volatility calculation implemented
+    alert_threshold: 25.0  # Alert if portfolio volatility exceeds 25%
+    
+  concentration_risk:
+    enabled: true
+    top_5_positions_max_percent: 50.0  # Alert if top 5 positions exceed 50%
+    top_10_positions_max_percent: 75.0  # Alert if top 10 positions exceed 75%
+    rationale: "High concentration increases portfolio risk"
+
+# Business Quality Monitoring
+# Monitor for business deterioration signals
+business_quality:
+  margin_compression:
+    enabled: false  # TODO: Enable when margin tracking implemented
+    threshold_percent: 20.0  # Alert on 20%+ margin decline
+    
+  revenue_decline:
+    enabled: false  # TODO: Enable when revenue tracking implemented
+    consecutive_quarters: 2
+    threshold_percent: 10.0
+    
+  debt_increase:
+    enabled: false  # TODO: Enable when debt tracking implemented
+    debt_equity_threshold: 1.0  # Alert when Debt/Equity exceeds 1.0
+
+# Daily Digest Configuration
+# What should be included in daily portfolio digest
+daily_digest:
+  enabled: true
+  
+  include:
+    - portfolio_summary  # Total value, daily change, allocation
+    - significant_price_moves  # Positions with price moves exceeding thresholds
+    - triggered_alerts  # Any monitoring rules triggered today
+    - upcoming_corporate_actions  # Known upcoming events
+    - positions_near_intrinsic_value  # Securities approaching buy/sell zones
+    - cash_position  # Available cash for deployment
+    
+  exclude_weekends: true
+  exclude_holidays: true
+
+# Alert Priority Levels
+alert_priorities:
+  critical:
+    # Require immediate attention
+    - position_concentration_exceeded
+    - margin_of_safety_negative
+    - portfolio_drawdown_exceeded
+    
+  high:
+    # Require attention within 24 hours
+    - significant_price_movement
+    - valuation_change_material
+    - corporate_action_announced
+    
+  medium:
+    # Review within week
+    - allocation_drift
+    - position_underperformance
+    - cash_allocation_out_of_range
+    
+  low:
+    # Informational only
+    - minor_price_movements
+    - routine_corporate_actions
+
+# TODO: User Input Required
+# - What price movement thresholds should trigger alerts?
+# - What allocation targets should be monitored?
+# - What margin of safety erosion is acceptable before alert?
+# - How should alert priorities be customized?
+# - What time should daily digest be generated?
+# - Should alerts be email, file-based, or both?
+
+# Alert Delivery Configuration
+alert_delivery:
+  method: file_based  # Write alerts to files for review
+  location: monitoring/alerts/
+  
+  format: markdown  # Alert files in markdown format
+  
+  filename_pattern: "alert-YYYY-MM-DD-HHMMSS.md"
+  
+  include_context: true  # Include relevant portfolio context with alerts
+  include_suggestions: true  # Include potential actions to consider
+
+# Monitoring Execution Schedule
+execution_schedule:
+  price_checks: daily_after_market_close
+  valuation_reviews: weekly
+  allocation_checks: daily
+  performance_reviews: monthly
+  
+  rationale: "Balance between timely alerts and avoiding alert fatigue"
+
+# Conservative Monitoring Principles
+principles:
+  - Monitor to inform, never to trade automatically
+  - Err on side of more alerts rather than missing important signals
+  - Provide context with every alert
+  - Track alert accuracy to refine rules over time
+  - All alerts require human review and decision
+  - Focus on meaningful changes, not noise
+  - Separate urgent alerts from informational ones

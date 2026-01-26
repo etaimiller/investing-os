@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://investos.local/schemas/portfolio-state.json",
+  "title": "Portfolio State Schema",
+  "description": "Complete portfolio state at a specific point in time. This is the single source of truth for portfolio composition, holdings, and cash positions.",
+  "type": "object",
+  "required": ["snapshot_id", "timestamp", "version", "accounts", "holdings", "cash", "totals"],
+  "properties": {
+    "snapshot_id": {
+      "type": "string",
+      "description": "Unique identifier for this snapshot in format YYYY-MM-DD-HHMMSS",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{6}$",
+      "example": "2024-01-15-143022"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when this snapshot was created"
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version for future compatibility",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "example": "1.0.0"
+    },
+    "source": {
+      "type": "object",
+      "description": "Metadata about the data source for this snapshot",
+      "properties": {
+        "broker": {
+          "type": "string",
+          "description": "Broker name (e.g., 'Trade Republic')"
+        },
+        "export_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date the source data was exported from the broker"
+        },
+        "import_method": {
+          "type": "string",
+          "description": "How this data was imported (e.g., 'manual_csv', 'automated')"
+        }
+      }
+    },
+    "accounts": {
+      "type": "array",
+      "description": "All accounts included in this portfolio snapshot",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["account_id", "account_type", "account_name", "currency"],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Unique identifier for this account"
+          },
+          "account_type": {
+            "type": "string",
+            "enum": ["taxable", "retirement", "custodial", "other"],
+            "description": "Account classification for tax and reporting purposes"
+          },
+          "account_name": {
+            "type": "string",
+            "description": "Human-readable account name"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Base currency for this account (ISO 4217 code)",
+            "pattern": "^[A-Z]{3}$",
+            "example": "EUR"
+          }
+        }
+      }
+    },
+    "holdings": {
+      "type": "array",
+      "description": "All security positions in the portfolio. FACTS ONLY - no valuations or assumptions.",
+      "items": {
+        "type": "object",
+        "required": ["security_id", "security_type", "name", "quantity", "currency", "account_id"],
+        "properties": {
+          "security_id": {
+            "type": "string",
+            "description": "Primary identifier (ISIN preferred, ticker as fallback)"
+          },
+          "security_type": {
+            "type": "string",
+            "enum": ["stock", "etf", "bond", "fund", "crypto", "other"],
+            "description": "Security classification"
+          },
+          "name": {
+            "type": "string",
+            "description": "Security name as reported by broker"
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Trading symbol if available"
+          },
+          "isin": {
+            "type": "string",
+            "description": "International Securities Identification Number",
+            "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Number of shares/units held. FACT from broker statement.",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "description": "Trading currency (ISO 4217 code)",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Which account holds this position"
+          },
+          "acquisition_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date position was acquired (if known)"
+          },
+          "cost_basis": {
+            "type": "object",
+            "description": "Historical cost information. FACTS from broker, not current valuations.",
+            "properties": {
+              "total_cost": {
+                "type": "number",
+                "description": "Total amount paid for this position"
+              },
+              "average_price": {
+                "type": "number",
+                "description": "Average price per share/unit paid"
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency of cost basis"
+              }
+            }
+          },
+          "market_data": {
+            "type": "object",
+            "description": "Current market data at snapshot time. FACTS from market, not valuations.",
+            "properties": {
+              "price": {
+                "type": "number",
+                "description": "Last traded price at snapshot time",
+                "minimum": 0
+              },
+              "price_date": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When this price was observed"
+              },
+              "market_value": {
+                "type": "number",
+                "description": "Current market value (quantity × price). DERIVED FACT.",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "cash": {
+      "type": "array",
+      "description": "Cash and cash-equivalent positions",
+      "items": {
+        "type": "object",
+        "required": ["account_id", "currency", "amount"],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Which account holds this cash"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of cash position (ISO 4217)",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Cash amount in specified currency. FACT from broker."
+          },
+          "cash_type": {
+            "type": "string",
+            "enum": ["available", "pending", "reserved", "money_market"],
+            "description": "Classification of cash availability"
+          }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "description": "Portfolio-level totals. DERIVED FACTS - calculated from holdings and cash.",
+      "required": ["total_market_value", "total_cash", "total_portfolio_value", "base_currency"],
+      "properties": {
+        "base_currency": {
+          "type": "string",
+          "description": "Currency for all total calculations (ISO 4217)",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "total_market_value": {
+          "type": "number",
+          "description": "Sum of all holdings market values in base currency",
+          "minimum": 0
+        },
+        "total_cash": {
+          "type": "number",
+          "description": "Sum of all cash positions in base currency",
+          "minimum": 0
+        },
+        "total_portfolio_value": {
+          "type": "number",
+          "description": "Total portfolio value (market value + cash) in base currency",
+          "minimum": 0
+        },
+        "allocation": {
+          "type": "object",
+          "description": "Portfolio allocation percentages. DERIVED FACTS.",
+          "properties": {
+            "equities_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "cash_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "other_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional snapshot metadata",
+      "properties": {
+        "previous_snapshot_id": {
+          "type": "string",
+          "description": "Link to previous snapshot for audit trail"
+        },
+        "validation_status": {
+          "type": "string",
+          "enum": ["validated", "pending", "error"],
+          "description": "Whether this snapshot passed validation checks"
+        },
+        "validation_notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Any validation warnings or notes"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Human notes about this snapshot"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

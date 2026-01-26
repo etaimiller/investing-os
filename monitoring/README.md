@@ -43,11 +43,25 @@ This directory contains portfolio monitoring rules, alerts, and daily digest gen
 
 ```
 monitoring/
+├── watch_rules.yaml   # Core monitoring rules and thresholds
 ├── rules/             # Monitoring rules and configurations
 ├── digests/           # Daily portfolio digests
 ├── alerts/            # Alert history and configurations
 └── performance/       # Performance tracking and analysis
 ```
+
+## Monitoring Rules
+
+Core monitoring rules are defined in **watch_rules.yaml**.
+
+**Rule categories**:
+- Price movement thresholds (single-day and multi-day)
+- Portfolio allocation drift monitoring
+- Valuation change alerts
+- Corporate action notifications
+- Risk metric tracking
+
+**Important**: All monitoring is for ALERTING only - never for automated trading. All alerts require human review and decision.
 
 ## Monitoring Rules Framework
 

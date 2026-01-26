@@ -33,11 +33,24 @@ This directory contains the current and historical state of your investment port
 
 ```
 portfolio/
-├── snapshots/          # Historical portfolio snapshots
+├── snapshots/          # Historical portfolio snapshots (JSON format)
+│   └── template_holdings_snapshot.csv  # Template showing expected format
 ├── holdings/           # Current and recent holdings data
 ├── cash/              # Cash and money market fund balances
 └── statements/        # Processed account statements
 ```
+
+## Data Format
+
+Portfolio snapshots follow the **portfolio-state.schema.json** schema located in `schema/`.
+
+**Key format principles**:
+- All data is FACTS from broker or market - no valuations or assumptions
+- Market values are DERIVED FACTS (quantity × price) clearly marked
+- Cost basis represents historical facts, not current intrinsic value
+- All currency amounts include ISO 4217 currency codes (EUR, USD, etc.)
+
+**Template**: See `portfolio/snapshots/template_holdings_snapshot.csv` for expected format
 
 ## TODO: User Input Required
 

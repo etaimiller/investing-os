@@ -73,9 +73,12 @@ logs/**
 !logs/README.md
 *.log
 
-# Personal Data (NEVER commit - keep directory structure READMEs)
+# Personal Data (NEVER commit - keep directory structure READMEs and templates)
 portfolio/**
 !portfolio/README.md
+!portfolio/snapshots/
+portfolio/snapshots/**
+!portfolio/snapshots/template_holdings_snapshot.csv
 personal/
 sensitive/
 private/

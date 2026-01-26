@@ -159,19 +159,26 @@ tools/
 **Status**: Directory created with README (Step 1)
 **See**: [tools/README.md](tools/README.md) for tool development guidelines
 
-### `schema/` - Data Schemas (Planned for Step 2)
+### `schema/` - Data Schemas
 **Purpose**: JSON schemas for data validation and structure definitions
 
-**Planned Structure**:
+**Structure**:
 ```
 schema/
-├── portfolio-snapshot.json
-├── valuation-model.json
-├── assumptions.json
-└── decision-memo.json
+├── README.md                      # Schema documentation and principles
+├── portfolio-state.schema.json   # Portfolio snapshot structure
+├── valuation-model.schema.json   # Valuation analysis structure
+└── decision-memo.schema.json     # Investment decision structure
 ```
 
-**Status**: Not yet created
+**Status**: Created in Step 2
+**See**: [schema/README.md](schema/README.md) for schema design principles
+
+**Key Principles**:
+- Separates facts, assumptions, and derived values
+- Conservative validation rules
+- Complete audit trail support
+- All schemas versioned for compatibility
 
 ### `bin/` - CLI Tools (Planned for Step 3)
 **Purpose**: Command-line interface and specialized scripts
@@ -201,10 +208,17 @@ bin/
 - **Directories Created**: portfolio/, research/, valuations/, decisions/, monitoring/, playbooks/, logs/, tools/
 - **Output**: Navigable codebase with clear organization and workflow documentation
 
-### Step 2: Core Data Schemas
+### Step 2: Core Data Schemas ✓
 - **Dependencies**: Step 1 directory structure
-- **Creates**: schema/ directory with JSON validation schemas
-- **Output**: Data validation and structure definitions
+- **Creates**: schema/ directory with JSON validation schemas, templates, and assumption files
+- **Files Created**: 
+  - schema/portfolio-state.schema.json
+  - schema/valuation-model.schema.json
+  - schema/decision-memo.schema.json
+  - portfolio/snapshots/template_holdings_snapshot.csv
+  - valuations/assumptions/conservative.yaml
+  - monitoring/watch_rules.yaml
+- **Output**: Complete data format specifications separating facts, assumptions, and derived values
 
 ### Step 3: Dispatch-Style CLI Scaffold
 - **Dependencies**: Step 2 schemas

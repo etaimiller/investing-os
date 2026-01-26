@@ -11,9 +11,20 @@ This directory contains all investment decision records and supporting analysis.
 
 ## File Naming Convention
 
-- **Decision memos**: `[TICKER]-decision-YYYY-MM-DD-HHMMSS.md`
+- **Decision memos**: `[TICKER]-decision-YYYY-MM-DD-HHMMSS.json`
 - **Trade plans**: `[TICKER]-trade-plan-YYYY-MM-DD.md`
 - **Framework updates**: `framework-update-YYYY-MM-DD.md`
+
+## Data Format
+
+Decision memos follow the **decision-memo.schema.json** schema located in `schema/`.
+
+**Key format principles**:
+- Complete audit trail with all supporting rationale
+- Links to valuations, research, and prior decisions
+- Separates facts, assumptions, and opinions
+- Includes alternatives considered
+- NO AUTOMATED EXECUTION - recommendations only for human review
 
 ## Decision Framework
 

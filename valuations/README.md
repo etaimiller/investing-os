@@ -41,11 +41,24 @@ This directory contains all security valuation analyses and intrinsic value calc
 
 ```
 valuations/
-├── models/            # Valuation calculations and models
+├── models/            # Valuation calculations and models (JSON)
 ├── assumptions/       # Underlying assumptions by security
+│   └── conservative.yaml  # Conservative assumption template
 ├── history/          # Historical valuations for accuracy tracking
 └── summaries/        # Valuation summaries and conclusions
 ```
+
+## Data Format
+
+Valuations follow the **valuation-model.schema.json** schema located in `schema/`.
+
+**Key format principles**:
+- Separates assumptions, facts, and calculated intrinsic value
+- All assumptions must be explicitly stated with rationale
+- Links to assumption templates (e.g., conservative.yaml)
+- Includes qualitative assessment alongside quantitative analysis
+
+**Assumption Template**: See `valuations/assumptions/conservative.yaml` for default conservative assumptions
 
 ## Valuation Principles
 

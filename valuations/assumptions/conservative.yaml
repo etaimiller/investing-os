@@ -1,0 +1,213 @@
+# Conservative Valuation Assumptions Template
+# These are the default conservative assumptions for security valuations
+# All assumptions must be explicitly justified and sourced
+
+# Metadata
+assumption_set_name: conservative
+version: 1.0.0
+description: Conservative assumptions for value investing approach with margin of safety
+last_updated: 2024-01-15
+
+# Revenue Growth Assumptions
+# Conservative approach: prefer historical averages or lower
+revenue_growth:
+  methodology: |
+    Use lower of: (1) historical 5-year average, (2) industry average, (3) GDP + inflation
+    
+  short_term_years: 5  # Project explicitly for 5 years
+  short_term_rate: 0.07  # 7% default - should be customized per security
+  
+  long_term_rate: 0.03  # 3% terminal growth - typically GDP growth rate
+  
+  rationale: |
+    Conservative growth rates prevent over-optimism. Short-term rates based on
+    historical performance and industry context. Terminal rate assumes company
+    grows at GDP rate in perpetuity - conservative for quality businesses.
+    
+  adjustment_factors:
+    - High historical volatility: reduce rate by 20-30%
+    - Cyclical business: use through-cycle average
+    - New business/IPO: use industry average minus 2-3%
+    - Mature business: use GDP growth rate
+    
+# Profitability Assumptions
+margins:
+  methodology: |
+    Use lower of: (1) 5-year historical average, (2) demonstrated sustainable margins
+    Assume mean reversion for margins above industry average
+    
+  operating_margin:
+    default: null  # Must be set per security based on history
+    approach: "Use trailing 5-year average or current if declining"
+    
+  net_margin:
+    default: null  # Must be set per security based on history
+    approach: "Conservative: use lower end of historical range"
+    
+  rationale: |
+    Margins tend to mean-revert. High margins attract competition.
+    Assume margins decline unless protected by moat.
+
+# Discount Rate (Required Return)
+discount_rate:
+  methodology: |
+    Build-up method: Risk-free rate + Equity risk premium + Company-specific risk
+    Use higher discount rate for higher uncertainty
+    
+  components:
+    risk_free_rate: 0.04  # 4% - use 10-year government bond yield
+    equity_risk_premium: 0.05  # 5% - historical equity premium over bonds
+    company_specific_risk: 0.03  # 3% - adjust based on business quality
+    
+  total_rate: 0.12  # 12% default minimum required return
+  
+  adjustments:
+    wide_moat: -0.01  # Can reduce by 1% for wide moat businesses
+    narrow_moat: 0.00  # No adjustment
+    no_moat: +0.02  # Increase by 2% for commoditized businesses
+    high_debt: +0.02  # Increase by 2% for overleveraged companies
+    cyclical: +0.02  # Increase by 2% for cyclical businesses
+    
+  minimum_rate: 0.10  # Never use discount rate below 10%
+  
+  rationale: |
+    Higher discount rate builds in conservatism. 12% minimum provides
+    margin of safety. Adjust based on business quality and risks.
+
+# Terminal Value Assumptions
+terminal_value:
+  preferred_method: perpetuity_growth
+  
+  perpetuity_growth:
+    rate: 0.03  # 3% - long-term GDP growth
+    rationale: "Conservative assumption that company grows at GDP rate forever"
+    
+  exit_multiple:
+    # Alternative method - use only if perpetuity growth inappropriate
+    pe_multiple: null  # Set based on industry and business quality
+    approach: "Use lower end of historical industry average P/E"
+    
+  conservative_asset_value:
+    # Most conservative - use for asset-heavy or declining businesses
+    approach: "Use tangible book value as floor value"
+
+# Margin of Safety
+margin_of_safety:
+  default_required: 0.25  # 25% - buy at 75% of intrinsic value or less
+  
+  adjustments:
+    high_quality_business: 0.20  # Can reduce to 20% for high-quality businesses
+    average_business: 0.25  # Standard 25%
+    uncertain_business: 0.35  # Increase to 35% for higher uncertainty
+    declining_business: 0.50  # Increase to 50% for turnarounds
+    
+  rationale: |
+    Margin of safety protects against: (1) valuation errors, (2) unforeseen risks,
+    (3) market volatility. Larger margin needed for lower-quality businesses.
+
+# TODO: User Input Required
+# - What is your minimum acceptable discount rate?
+# - What margin of safety is required for different business quality levels?
+# - How should growth rates be adjusted for different industries?
+# - What sources will be used for financial data and assumptions?
+
+# Relative Valuation Benchmarks
+relative_valuation:
+  pe_ratio:
+    market_average: 18  # Update based on current market conditions
+    high_quality_premium: 1.3  # Quality businesses can trade at 30% premium
+    
+  price_to_book:
+    threshold_undervalued: 1.5  # Below 1.5x book may indicate undervaluation
+    threshold_overvalued: 4.0  # Above 4.0x book requires exceptional ROIC
+    
+  approach: |
+    Relative valuation is secondary to intrinsic value.
+    Use as sanity check, not primary valuation method.
+
+# Qualitative Assessment Factors
+qualitative_factors:
+  competitive_moat:
+    wide_moat_characteristics:
+      - Strong brand with pricing power
+      - Network effects
+      - High switching costs
+      - Cost advantages from scale
+      - Regulatory protection or patents
+      
+    narrow_moat_characteristics:
+      - Some brand value
+      - Moderate switching costs
+      - Some scale advantages
+      
+    no_moat_characteristics:
+      - Commoditized product/service
+      - Low barriers to entry
+      - Price competition primary factor
+      
+  management_assessment:
+    excellent:
+      - Long track record of value creation
+      - Disciplined capital allocation
+      - Shareholder-friendly actions
+      - Transparent communication
+      
+    red_flags:
+      - Excessive compensation vs results
+      - Serial acquirers with poor integration
+      - Accounting irregularities
+      - Frequent strategy changes
+
+# Risk Factor Framework
+risk_assessment:
+  business_risks:
+    - Technology disruption risk
+    - Regulatory changes
+    - Competitive threats
+    - Customer concentration
+    - Supplier concentration
+    
+  financial_risks:
+    - High debt levels (Debt/Equity > 1.0)
+    - Declining margins
+    - Negative cash flow
+    - Working capital issues
+    
+  market_risks:
+    - Cyclicality
+    - Economic sensitivity
+    - Currency exposure
+    - Interest rate sensitivity
+    
+  mitigation_approaches:
+    - Build into discount rate (increase required return)
+    - Reduce growth assumptions
+    - Increase margin of safety requirement
+    - Accept risk if properly compensated
+
+# Valuation Review Triggers
+review_schedule:
+  routine_review: quarterly  # Review all valuations quarterly
+  
+  immediate_review_triggers:
+    - Price moves >20% from intrinsic value
+    - Material business change (acquisition, divestiture, restructuring)
+    - Management change
+    - Significant industry disruption
+    - Earnings surprise >20% vs expectations
+    
+  update_requirements:
+    - Document what changed and why
+    - Compare to previous valuation
+    - Reassess assumptions and margin of safety
+
+# Conservative by Default Principles
+principles:
+  - When in doubt, use lower growth rates
+  - When in doubt, use higher discount rates
+  - When in doubt, require larger margin of safety
+  - Never rely on aggressive assumptions
+  - Prefer demonstrable history over projections
+  - Quality of business over growth rate
+  - Understand before valuing
+  - Pass on opportunities you don't understand

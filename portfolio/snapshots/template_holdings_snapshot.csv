@@ -1,0 +1,60 @@
+# Portfolio Snapshot Template
+# This is a sample/template showing the expected format for portfolio holdings snapshots
+# Actual data files should be stored in portfolio/snapshots/ with timestamp-based naming
+
+# Snapshot Metadata
+# snapshot_id: YYYY-MM-DD-HHMMSS format
+# timestamp: ISO 8601 format
+# source_broker: Trade Republic (or other broker)
+# export_date: Date data was exported from broker
+
+# Holdings Data
+# Each row represents one security position
+# Column definitions:
+
+# security_id: Primary identifier (ISIN preferred, ticker acceptable)
+# security_type: Classification (stock, etf, bond, fund, crypto, other)
+# name: Full security name as reported by broker
+# ticker: Trading symbol (optional but recommended)
+# isin: International Securities Identification Number (required for Trade Republic)
+# quantity: Number of shares/units held (FACT from broker)
+# currency: Trading currency (ISO 4217 three-letter code: EUR, USD, GBP, etc.)
+# account_id: Account identifier holding this position
+# account_type: taxable, retirement, custodial, other
+
+# Cost Basis (FACTS from broker - historical data, not current valuations)
+# total_cost: Total amount paid for position in original currency
+# average_price: Average price per share/unit paid
+# cost_currency: Currency of cost basis
+
+# Market Data (FACTS from market at snapshot time - not valuations or projections)
+# market_price: Last traded price at snapshot time
+# price_date: When this price was observed (ISO 8601)
+# market_value: Current market value (quantity × market_price) - DERIVED FACT
+# market_currency: Currency of market pricing
+
+# TODO: User Input Required
+# - Confirm column order matches Trade Republic export format
+# - Determine if additional broker-specific columns are needed
+# - Decide whether to track lots separately or aggregate positions
+
+# Sample Data Format (CSV)
+security_id,security_type,name,ticker,isin,quantity,currency,account_id,account_type,total_cost,average_price,cost_currency,market_price,price_date,market_value,market_currency
+US0378331005,stock,Apple Inc.,AAPL,US0378331005,10,USD,account_001,taxable,1500.00,150.00,USD,175.50,2024-01-15T16:00:00Z,1755.00,USD
+IE00B4L5Y983,etf,iShares Core MSCI World UCITS ETF,IWDA,IE00B4L5Y983,50,EUR,account_001,taxable,3500.00,70.00,EUR,75.25,2024-01-15T16:00:00Z,3762.50,EUR
+
+# Cash Positions
+# account_id: Which account holds this cash
+# currency: Currency of cash position (ISO 4217)
+# amount: Cash amount - FACT from broker
+# cash_type: available, pending, reserved, money_market
+
+# IMPORTANT NOTES:
+# 1. This is a TEMPLATE - actual snapshot files must use timestamp-based naming
+# 2. All values in holdings are FACTS from broker or market - no valuations or assumptions
+# 3. Market values are DERIVED FACTS (quantity × price) not independent valuations
+# 4. Separate valuation analysis goes in valuations/ directory, not here
+# 5. Cost basis represents historical facts, not current intrinsic value
+# 6. Always use ISO 4217 currency codes (EUR, USD, GBP, CHF, etc.)
+# 7. ISINs are preferred for international securities identification
+# 8. Keep snapshots immutable - never modify past files, always create new ones

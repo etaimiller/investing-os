@@ -1,0 +1,323 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://investos.local/schemas/valuation-model.json",
+  "title": "Security Valuation Model Schema",
+  "description": "Conservative valuation model for a single security. Separates assumptions, facts, and calculated intrinsic value.",
+  "type": "object",
+  "required": ["valuation_id", "timestamp", "security_id", "version", "assumptions", "valuation"],
+  "properties": {
+    "valuation_id": {
+      "type": "string",
+      "description": "Unique identifier: [SECURITY_ID]-valuation-YYYY-MM-DD",
+      "pattern": "^[A-Z0-9]+-valuation-\\d{4}-\\d{2}-\\d{2}$",
+      "example": "AAPL-valuation-2024-01-15"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this valuation was created"
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "example": "1.0.0"
+    },
+    "security_id": {
+      "type": "string",
+      "description": "Security being valued (ISIN or ticker)"
+    },
+    "security_name": {
+      "type": "string",
+      "description": "Full security name for reference"
+    },
+    "assumptions": {
+      "type": "object",
+      "description": "All assumptions used in valuation. MUST be explicitly stated and sourced.",
+      "required": ["assumption_set", "revenue_growth", "margin_assumptions", "discount_rate"],
+      "properties": {
+        "assumption_set": {
+          "type": "string",
+          "description": "Which assumption template was used (e.g., 'conservative', 'base_case', 'optimistic')"
+        },
+        "revenue_growth": {
+          "type": "object",
+          "description": "Revenue growth assumptions with rationale",
+          "properties": {
+            "short_term_rate": {
+              "type": "number",
+              "description": "Growth rate for years 1-5 (as decimal, e.g., 0.10 = 10%)"
+            },
+            "long_term_rate": {
+              "type": "number",
+              "description": "Terminal growth rate (conservative, typically GDP growth)"
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Why these growth rates are appropriate and conservative"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Data sources supporting these assumptions"
+            }
+          }
+        },
+        "margin_assumptions": {
+          "type": "object",
+          "description": "Profitability margin assumptions",
+          "properties": {
+            "operating_margin": {
+              "type": "number",
+              "description": "Expected operating margin (as decimal)"
+            },
+            "net_margin": {
+              "type": "number",
+              "description": "Expected net profit margin (as decimal)"
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Why these margins are sustainable and conservative"
+            }
+          }
+        },
+        "discount_rate": {
+          "type": "object",
+          "description": "Discount rate (required return) with components",
+          "required": ["rate", "components"],
+          "properties": {
+            "rate": {
+              "type": "number",
+              "description": "Total discount rate (as decimal, e.g., 0.12 = 12%)"
+            },
+            "components": {
+              "type": "object",
+              "properties": {
+                "risk_free_rate": {
+                  "type": "number",
+                  "description": "Risk-free rate component"
+                },
+                "equity_risk_premium": {
+                  "type": "number",
+                  "description": "Market risk premium"
+                },
+                "company_specific_risk": {
+                  "type": "number",
+                  "description": "Additional risk for this specific security"
+                }
+              }
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Why this discount rate is appropriate"
+            }
+          }
+        },
+        "terminal_value_method": {
+          "type": "string",
+          "enum": ["perpetuity_growth", "exit_multiple", "conservative_asset_value"],
+          "description": "Method used for terminal value calculation"
+        },
+        "assumption_notes": {
+          "type": "string",
+          "description": "Additional notes on assumptions and why they are conservative"
+        }
+      }
+    },
+    "facts": {
+      "type": "object",
+      "description": "Factual data from financial statements and filings. NO ASSUMPTIONS.",
+      "properties": {
+        "current_price": {
+          "type": "number",
+          "description": "Current market price at valuation date"
+        },
+        "shares_outstanding": {
+          "type": "number",
+          "description": "Current shares outstanding"
+        },
+        "market_cap": {
+          "type": "number",
+          "description": "Current market capitalization"
+        },
+        "recent_revenue": {
+          "type": "number",
+          "description": "Most recent annual or TTM revenue"
+        },
+        "recent_earnings": {
+          "type": "number",
+          "description": "Most recent annual or TTM earnings"
+        },
+        "book_value": {
+          "type": "number",
+          "description": "Book value from most recent balance sheet"
+        },
+        "cash_and_equivalents": {
+          "type": "number",
+          "description": "Cash and marketable securities"
+        },
+        "total_debt": {
+          "type": "number",
+          "description": "Total interest-bearing debt"
+        },
+        "data_date": {
+          "type": "string",
+          "format": "date",
+          "description": "As-of date for financial data"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Sources for factual data (10-K, 10-Q, annual report, etc.)"
+        }
+      }
+    },
+    "valuation": {
+      "type": "object",
+      "description": "Calculated valuation results. DERIVED from assumptions and facts.",
+      "required": ["intrinsic_value_per_share", "methodology", "margin_of_safety_required"],
+      "properties": {
+        "methodology": {
+          "type": "string",
+          "enum": ["dcf", "relative_valuation", "asset_based", "hybrid"],
+          "description": "Primary valuation methodology used"
+        },
+        "intrinsic_value_per_share": {
+          "type": "number",
+          "description": "Calculated intrinsic value per share using stated assumptions",
+          "minimum": 0
+        },
+        "valuation_range": {
+          "type": "object",
+          "description": "Range of intrinsic values based on assumption sensitivities",
+          "properties": {
+            "low": {
+              "type": "number",
+              "description": "Conservative lower bound"
+            },
+            "high": {
+              "type": "number",
+              "description": "Optimistic upper bound"
+            }
+          }
+        },
+        "margin_of_safety_required": {
+          "type": "number",
+          "description": "Required discount to intrinsic value (as decimal, e.g., 0.25 = 25%)"
+        },
+        "buy_price_target": {
+          "type": "number",
+          "description": "Maximum price to pay (intrinsic_value × (1 - margin_of_safety))"
+        },
+        "relative_valuation": {
+          "type": "object",
+          "description": "Comparison to peers and market",
+          "properties": {
+            "pe_ratio": {
+              "type": "number",
+              "description": "Current P/E ratio"
+            },
+            "peer_average_pe": {
+              "type": "number",
+              "description": "Average P/E of comparable companies"
+            },
+            "market_pe": {
+              "type": "number",
+              "description": "Overall market P/E"
+            },
+            "relative_assessment": {
+              "type": "string",
+              "description": "Is security cheap, fair, or expensive vs peers/market"
+            }
+          }
+        }
+      }
+    },
+    "qualitative": {
+      "type": "object",
+      "description": "Qualitative assessment affecting valuation confidence",
+      "properties": {
+        "competitive_moat": {
+          "type": "object",
+          "properties": {
+            "rating": {
+              "type": "string",
+              "enum": ["wide", "narrow", "none"],
+              "description": "Competitive advantage assessment"
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Why this moat rating is assigned"
+            }
+          }
+        },
+        "management_quality": {
+          "type": "object",
+          "properties": {
+            "rating": {
+              "type": "string",
+              "enum": ["excellent", "good", "fair", "poor"],
+              "description": "Management team quality assessment"
+            },
+            "capital_allocation": {
+              "type": "string",
+              "description": "Assessment of capital allocation discipline"
+            }
+          }
+        },
+        "risk_factors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "risk": {
+                "type": "string",
+                "description": "Specific risk to business or valuation"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "Risk severity assessment"
+              },
+              "mitigation": {
+                "type": "string",
+                "description": "How this risk is mitigated or accounted for"
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "analyst": {
+          "type": "string",
+          "description": "Who created this valuation"
+        },
+        "review_date": {
+          "type": "string",
+          "format": "date",
+          "description": "When valuation should be reviewed/updated"
+        },
+        "previous_valuation_id": {
+          "type": "string",
+          "description": "Link to previous valuation for comparison"
+        },
+        "confidence_level": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Confidence in valuation given available data"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional valuation notes"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

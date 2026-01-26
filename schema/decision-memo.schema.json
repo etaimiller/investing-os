@@ -1,0 +1,456 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://investos.local/schemas/decision-memo.json",
+  "title": "Investment Decision Memo Schema",
+  "description": "Complete record of an investment decision with full rationale. Creates audit trail.",
+  "type": "object",
+  "required": ["decision_id", "timestamp", "security_id", "decision_type", "factual_basis", "assumptions", "valuation_analysis", "qualitative_assessment", "risk_factors", "decision_rationale"],
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "description": "Unique identifier: [SECURITY_ID]-decision-YYYY-MM-DD-HHMMSS",
+      "pattern": "^[A-Z0-9]+-decision-\\d{4}-\\d{2}-\\d{2}-\\d{6}$",
+      "example": "AAPL-decision-2024-01-15-143022"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this decision was made"
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "example": "1.0.0"
+    },
+    "security_id": {
+      "type": "string",
+      "description": "Security this decision concerns"
+    },
+    "security_name": {
+      "type": "string",
+      "description": "Full security name"
+    },
+    "decision_type": {
+      "type": "string",
+      "enum": ["buy", "sell", "hold", "trim", "add"],
+      "description": "Type of investment decision"
+    },
+    "decision_summary": {
+      "type": "string",
+      "description": "One-paragraph summary of the decision and rationale"
+    },
+    "factual_basis": {
+      "type": "object",
+      "description": "Current facts informing this decision. NO OPINIONS OR ASSUMPTIONS.",
+      "required": ["portfolio_context", "security_context"],
+      "properties": {
+        "portfolio_context": {
+          "type": "object",
+          "description": "Current portfolio state facts",
+          "properties": {
+            "snapshot_id": {
+              "type": "string",
+              "description": "Portfolio snapshot this decision is based on"
+            },
+            "current_position": {
+              "type": "number",
+              "description": "Current shares owned (0 if none)"
+            },
+            "position_value": {
+              "type": "number",
+              "description": "Current value of position"
+            },
+            "portfolio_allocation_percent": {
+              "type": "number",
+              "description": "What % of portfolio this position represents"
+            },
+            "available_cash": {
+              "type": "number",
+              "description": "Cash available for deployment"
+            }
+          }
+        },
+        "security_context": {
+          "type": "object",
+          "description": "Current security facts",
+          "properties": {
+            "current_price": {
+              "type": "number",
+              "description": "Current market price"
+            },
+            "price_date": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When this price was observed"
+            },
+            "recent_performance": {
+              "type": "object",
+              "properties": {
+                "one_day_change_percent": { "type": "number" },
+                "one_week_change_percent": { "type": "number" },
+                "one_month_change_percent": { "type": "number" },
+                "ytd_change_percent": { "type": "number" }
+              }
+            },
+            "fundamental_facts": {
+              "type": "object",
+              "description": "Recent fundamental facts from filings",
+              "properties": {
+                "market_cap": { "type": "number" },
+                "recent_revenue": { "type": "number" },
+                "recent_earnings": { "type": "number" },
+                "data_source": { "type": "string" }
+              }
+            }
+          }
+        },
+        "triggering_event": {
+          "type": "string",
+          "description": "What triggered this decision review (price move, research, valuation update, etc.)"
+        }
+      }
+    },
+    "assumptions": {
+      "type": "object",
+      "description": "All assumptions underlying this decision. Link to valuation assumptions.",
+      "required": ["valuation_id", "key_assumptions"],
+      "properties": {
+        "valuation_id": {
+          "type": "string",
+          "description": "Which valuation model is this decision based on"
+        },
+        "key_assumptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "assumption": {
+                "type": "string",
+                "description": "The assumption being made"
+              },
+              "rationale": {
+                "type": "string",
+                "description": "Why this assumption is reasonable and conservative"
+              },
+              "sensitivity": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": "How sensitive the decision is to this assumption"
+              }
+            }
+          }
+        },
+        "assumption_risks": {
+          "type": "string",
+          "description": "What could go wrong with these assumptions"
+        }
+      }
+    },
+    "valuation_analysis": {
+      "type": "object",
+      "description": "Valuation-based analysis supporting decision",
+      "required": ["intrinsic_value", "margin_of_safety"],
+      "properties": {
+        "intrinsic_value_per_share": {
+          "type": "number",
+          "description": "Calculated intrinsic value"
+        },
+        "current_price": {
+          "type": "number",
+          "description": "Current market price"
+        },
+        "price_to_value_ratio": {
+          "type": "number",
+          "description": "Current price / intrinsic value"
+        },
+        "margin_of_safety_actual": {
+          "type": "number",
+          "description": "Actual margin of safety at current price (as decimal)"
+        },
+        "margin_of_safety_required": {
+          "type": "number",
+          "description": "Required margin of safety for this security (as decimal)"
+        },
+        "buy_price_target": {
+          "type": "number",
+          "description": "Maximum price to pay (if buy decision)"
+        },
+        "sell_price_target": {
+          "type": "number",
+          "description": "Minimum price to sell (if sell decision)"
+        },
+        "valuation_confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Confidence in valuation given available data"
+        }
+      }
+    },
+    "qualitative_assessment": {
+      "type": "object",
+      "description": "Qualitative factors affecting decision",
+      "required": ["competitive_moat", "management_quality", "capital_allocation"],
+      "properties": {
+        "competitive_moat": {
+          "type": "object",
+          "properties": {
+            "rating": {
+              "type": "string",
+              "enum": ["wide", "narrow", "none"]
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Why this moat rating and how it affects decision"
+            },
+            "durability": {
+              "type": "string",
+              "description": "How long is this competitive advantage sustainable"
+            }
+          }
+        },
+        "management_quality": {
+          "type": "object",
+          "properties": {
+            "rating": {
+              "type": "string",
+              "enum": ["excellent", "good", "fair", "poor"]
+            },
+            "track_record": {
+              "type": "string",
+              "description": "Management's track record of value creation"
+            },
+            "red_flags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Any management concerns"
+            }
+          }
+        },
+        "capital_allocation": {
+          "type": "object",
+          "properties": {
+            "rating": {
+              "type": "string",
+              "enum": ["excellent", "good", "fair", "poor"]
+            },
+            "rationale": {
+              "type": "string",
+              "description": "Assessment of capital allocation discipline"
+            },
+            "shareholder_friendliness": {
+              "type": "string",
+              "description": "How management treats shareholders (buybacks, dividends, M&A)"
+            }
+          }
+        },
+        "overall_quality_rating": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Overall business quality assessment"
+        }
+      }
+    },
+    "risk_factors": {
+      "type": "object",
+      "description": "Specific risks and mitigating factors",
+      "required": ["identified_risks", "risk_mitigation"],
+      "properties": {
+        "identified_risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["risk", "severity", "probability"],
+            "properties": {
+              "risk": {
+                "type": "string",
+                "description": "Specific risk to investment thesis"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["catastrophic", "high", "medium", "low"],
+                "description": "Impact if risk materializes"
+              },
+              "probability": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": "Likelihood of risk occurring"
+              },
+              "timeframe": {
+                "type": "string",
+                "description": "When this risk might materialize"
+              }
+            }
+          }
+        },
+        "risk_mitigation": {
+          "type": "string",
+          "description": "How risks are mitigated through position sizing, diversification, or margin of safety"
+        },
+        "risk_tolerance": {
+          "type": "string",
+          "description": "Why the risk/reward tradeoff is acceptable"
+        }
+      }
+    },
+    "decision_rationale": {
+      "type": "object",
+      "description": "Complete explanation of why this decision is being made",
+      "required": ["primary_reasons", "alternatives_considered", "decision_criteria_met"],
+      "properties": {
+        "primary_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Main reasons supporting this decision",
+          "minItems": 1
+        },
+        "alternatives_considered": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "alternative": {
+                "type": "string",
+                "description": "Alternative action considered"
+              },
+              "why_rejected": {
+                "type": "string",
+                "description": "Why this alternative was not chosen"
+              }
+            }
+          }
+        },
+        "decision_criteria_met": {
+          "type": "object",
+          "description": "How this decision meets investment criteria",
+          "properties": {
+            "sufficient_margin_of_safety": {
+              "type": "boolean",
+              "description": "Does position offer adequate margin of safety"
+            },
+            "acceptable_business_quality": {
+              "type": "boolean",
+              "description": "Is business quality acceptable for investment"
+            },
+            "manageable_risk_profile": {
+              "type": "boolean",
+              "description": "Are risks understood and acceptable"
+            },
+            "appropriate_position_size": {
+              "type": "boolean",
+              "description": "Is proposed position size appropriate for portfolio"
+            }
+          }
+        },
+        "thesis_summary": {
+          "type": "string",
+          "description": "One-paragraph investment thesis"
+        },
+        "expected_holding_period": {
+          "type": "string",
+          "description": "How long do you expect to hold this position"
+        }
+      }
+    },
+    "action_plan": {
+      "type": "object",
+      "description": "Specific actions to take based on this decision. NO AUTOMATED EXECUTION.",
+      "properties": {
+        "recommended_action": {
+          "type": "string",
+          "description": "Specific action to take (e.g., 'Buy 10 shares at $150 or below')"
+        },
+        "position_sizing": {
+          "type": "object",
+          "properties": {
+            "target_position_size_shares": {
+              "type": "number",
+              "description": "Number of shares for this action"
+            },
+            "target_position_value": {
+              "type": "number",
+              "description": "Dollar value of position"
+            },
+            "target_portfolio_allocation_percent": {
+              "type": "number",
+              "description": "Target % of portfolio"
+            },
+            "position_sizing_rationale": {
+              "type": "string",
+              "description": "Why this position size is appropriate"
+            }
+          }
+        },
+        "execution_constraints": {
+          "type": "object",
+          "properties": {
+            "price_limit": {
+              "type": "number",
+              "description": "Maximum buy price or minimum sell price"
+            },
+            "time_limit": {
+              "type": "string",
+              "description": "How long is this decision valid"
+            },
+            "market_conditions": {
+              "type": "string",
+              "description": "Required market conditions for execution"
+            }
+          }
+        },
+        "review_triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What events should trigger decision review"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "decision_maker": {
+          "type": "string",
+          "description": "Who made this decision"
+        },
+        "reviewed_by": {
+          "type": "string",
+          "description": "Who reviewed this decision (if applicable)"
+        },
+        "approval_status": {
+          "type": "string",
+          "enum": ["approved", "pending", "rejected"],
+          "description": "Human approval status"
+        },
+        "approval_date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When decision was approved"
+        },
+        "related_decisions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Links to related previous decisions"
+        },
+        "research_links": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Links to research files supporting this decision"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional decision notes"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
