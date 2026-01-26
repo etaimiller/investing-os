@@ -36,6 +36,73 @@ class IngestError(Exception):
     pass
 
 
+def is_valid_isin(isin: str) -> bool:
+    """
+    Validate ISIN using ISO 6166 checksum (Luhn mod-10 algorithm).
+    
+    ISIN format: 2 letter country code + 9 alphanumeric + 1 check digit
+    
+    Algorithm:
+    1. Convert letters to numbers (A=10, B=11, ..., Z=35)
+    2. This creates a string of digits (letters become 2 digits each)
+    3. Starting from the rightmost digit, double every second digit going left
+    4. Sum all individual digits (if doubling produces 2 digits, sum them separately)
+    5. Valid if sum % 10 == 0
+    
+    Examples:
+    - US0378331005 (Apple) → Valid
+    - IE00B4L5Y983 (iShares) → Valid  
+    - BRUNNENSTRAS → Invalid (wrong format, fails checksum)
+    """
+    if not isin or len(isin) != 12:
+        return False
+    
+    # First 2 chars must be letters (country code)
+    if not isin[:2].isalpha() or not isin[:2].isupper():
+        return False
+    
+    # Last char must be digit (check digit)
+    if not isin[-1].isdigit():
+        return False
+    
+    # Middle 9 chars must be alphanumeric and uppercase
+    middle = isin[2:11]
+    if not middle.isalnum():
+        return False
+    # Check each char is either digit or uppercase letter
+    for char in middle:
+        if not (char.isdigit() or (char.isalpha() and char.isupper())):
+            return False
+    
+    # Convert to string of digits: letters A=10, B=11, ..., Z=35
+    digit_string = ''
+    for char in isin:
+        if char.isdigit():
+            digit_string += char
+        elif char.isalpha() and char.isupper():
+            # A=10, B=11, ..., Z=35
+            digit_string += str(ord(char) - ord('A') + 10)
+        else:
+            return False
+    
+    # Apply Luhn algorithm (mod-10 check)
+    # Process individual digits from right to left, doubling every second digit
+    total = 0
+    for i, digit_char in enumerate(reversed(digit_string)):
+        digit = int(digit_char)
+        
+        # Double every second digit (position 1, 3, 5, ... from right, 0-indexed)
+        if i % 2 == 1:
+            digit *= 2
+            if digit > 9:
+                # Sum the two digits (e.g., 14 → 1+4=5)
+                digit = digit // 10 + digit % 10
+        
+        total += digit
+    
+    return total % 10 == 0
+
+
 class TradeRepublicParser:
     """Parse Trade Republic portfolio PDF"""
     
@@ -45,7 +112,7 @@ class TradeRepublicParser:
     # Common currency codes in Trade Republic
     CURRENCY_PATTERN = re.compile(r'\b(EUR|USD|GBP|CHF)\b')
     
-    def __init__(self, pdf_path: Path):
+    def __init__(self, pdf_path: Path, debug: bool = False):
         """Initialize parser with PDF path"""
         if fitz is None:
             raise IngestError(
@@ -55,6 +122,9 @@ class TradeRepublicParser:
         self.pdf_path = pdf_path
         self.warnings = []
         self.info = {}
+        self.debug = debug
+        self.isin_candidates = 0
+        self.valid_isins = 0
         
     def extract_text(self) -> str:
         """Extract all text from PDF"""
@@ -77,29 +147,122 @@ class TradeRepublicParser:
         # If less than 100 characters extracted, likely scanned
         return len(text.strip()) < 100
     
+    def _find_holdings_section(self, lines: List[str]) -> Tuple[int, int]:
+        """
+        Find the holdings section in PDF text.
+        Trade Republic uses "POSITIONEN" header for holdings.
+        Returns (start_line, end_line) tuple, or (0, len(lines)) if not found.
+        """
+        start_idx = 0
+        end_idx = len(lines)
+        
+        for i, line in enumerate(lines):
+            # Look for "POSITIONEN" (German for "Positions")
+            if re.search(r'\bPOSITIONEN\b', line, re.IGNORECASE):
+                start_idx = i
+                if self.debug:
+                    print(f"[DEBUG] Found POSITIONEN header at line {i}")
+                break
+        
+        # Look for section end markers
+        for i in range(start_idx, len(lines)):
+            # Common end markers in Trade Republic PDFs
+            if re.search(r'\b(GESAMT|TOTAL|Summe)\b', lines[i], re.IGNORECASE):
+                end_idx = i
+                if self.debug:
+                    print(f"[DEBUG] Found section end at line {i}")
+                break
+        
+        return start_idx, end_idx
+    
+    def _find_isin_lines(self, lines: List[str]) -> List[int]:
+        """
+        Find lines that explicitly mention "ISIN" label.
+        Returns list of line indices.
+        """
+        isin_label_lines = []
+        for i, line in enumerate(lines):
+            if re.search(r'\bISIN\b', line, re.IGNORECASE):
+                isin_label_lines.append(i)
+        
+        if self.debug and isin_label_lines:
+            print(f"[DEBUG] Found {len(isin_label_lines)} lines with 'ISIN' label")
+        
+        return isin_label_lines
+    
     def parse_holdings_table(self, text: str) -> List[Dict[str, Any]]:
         """
-        Parse holdings table from PDF text.
+        Parse holdings table from PDF text with improved ISIN detection.
         
-        Expected format (approximate):
-        Name              ISIN         Qty    Avg Buy  Curr Price  Value    Gain/Loss
-        Apple Inc.        US0378331005  10    150.00   175.50     1755.00   +255.00
+        Strategy:
+        1. Find holdings section (POSITIONEN)
+        2. Find lines with "ISIN" labels
+        3. Extract ISIN candidates and validate checksums
+        4. Parse holdings only for valid ISINs
         """
         holdings = []
         lines = text.split('\n')
         
-        for i, line in enumerate(lines):
-            # Look for lines containing ISINs
-            isin_match = self.ISIN_PATTERN.search(line)
-            if not isin_match:
+        # Find holdings section boundaries
+        section_start, section_end = self._find_holdings_section(lines)
+        
+        # Find lines with "ISIN" labels
+        isin_label_lines = self._find_isin_lines(lines)
+        
+        # Determine search strategy
+        if isin_label_lines:
+            # If we have explicit ISIN labels, only search near those lines
+            search_lines = set()
+            for label_line in isin_label_lines:
+                # Include ±2 lines around each ISIN label
+                for offset in range(-2, 3):
+                    line_idx = label_line + offset
+                    if section_start <= line_idx < section_end:
+                        search_lines.add(line_idx)
+            search_lines = sorted(search_lines)
+            
+            if self.debug:
+                print(f"[DEBUG] Searching {len(search_lines)} lines near ISIN labels")
+        else:
+            # Fallback: search entire holdings section
+            search_lines = list(range(section_start, section_end))
+            
+            if self.debug:
+                print(f"[DEBUG] No ISIN labels found, searching entire section ({section_end - section_start} lines)")
+        
+        # Extract and validate ISINs
+        for i in search_lines:
+            if i >= len(lines):
                 continue
             
-            isin = isin_match.group(1)
+            line = lines[i]
             
-            # Try to extract other fields from this line and surrounding context
-            holding = self._parse_holding_row(line, isin, lines, i)
-            if holding:
-                holdings.append(holding)
+            # Find ISIN candidates
+            for match in self.ISIN_PATTERN.finditer(line):
+                candidate = match.group(1)
+                self.isin_candidates += 1
+                
+                # Validate checksum
+                if not is_valid_isin(candidate):
+                    if self.debug:
+                        # Redact for safety - only show format, not full content
+                        print(f"[DEBUG] Rejected ISIN candidate: {candidate[:2]}...{candidate[-2:]} (checksum failed)")
+                    continue
+                
+                self.valid_isins += 1
+                
+                if self.debug:
+                    # Redacted line preview (no amounts)
+                    preview = line[:50].replace(candidate, 'ISIN***')
+                    print(f"[DEBUG] Valid ISIN found on line {i}: {candidate[:2]}...{candidate[-2:]} | {preview}...")
+                
+                # Parse holding data
+                holding = self._parse_holding_row(line, candidate, lines, i)
+                if holding:
+                    holdings.append(holding)
+        
+        if self.debug:
+            print(f"[DEBUG] ISIN candidates: {self.isin_candidates}, valid: {self.valid_isins}, holdings: {len(holdings)}")
         
         return holdings
     
@@ -466,7 +629,8 @@ def ingest_pdf(
     repo_root: Path,
     config,
     account_name: str = 'unknown',
-    export_csv: bool = True
+    export_csv: bool = True,
+    debug: bool = False
 ) -> Dict[str, Any]:
     """
     Main ingestion function.
@@ -491,7 +655,7 @@ def ingest_pdf(
         raise IngestError(f"File is not a PDF: {pdf_path}")
     
     # Parse PDF
-    parser = TradeRepublicParser(pdf_path)
+    parser = TradeRepublicParser(pdf_path, debug=debug)
     parsed_data = parser.parse()
     
     result['warnings'].extend(parsed_data.get('warnings', []))

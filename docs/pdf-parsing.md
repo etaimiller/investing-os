@@ -42,19 +42,29 @@ USD, GBP, CHF also supported if found in text.
 - Detects if PDF is scanned (minimal text) and reports error
 
 ### Pattern Matching
-- **ISIN Detection**: Looks for pattern `[A-Z]{2}[A-Z0-9]{10}`
+- **ISIN Detection**: Looks for pattern `[A-Z]{2}[A-Z0-9]{10}` with ISO 6166 checksum validation
+  - Uses Luhn mod-10 algorithm to validate ISIN checksums
+  - Rejects false positives (e.g., "BRUNNENSTRASSE" from street names)
+  - Prioritizes ISINs near explicit "ISIN" labels in the text
 - **Number Extraction**: Finds numeric values with decimals and thousand separators
 - **Currency Detection**: Identifies EUR, USD, GBP, CHF
 
 ### Data Extraction per Holding
-For each line containing an ISIN:
-1. Extract ISIN
-2. Extract security name (text before ISIN)
-3. Extract numbers from line
-4. Map numbers to fields (heuristic):
+For each line containing a valid ISIN:
+1. Find "POSITIONEN" section (holdings table boundaries)
+2. Search for explicit "ISIN" labels and prioritize nearby ISINs (±2 lines)
+3. Validate ISIN checksums using ISO 6166 standard (Luhn mod-10 algorithm)
+4. Extract security name (text before ISIN)
+5. Extract numbers from line
+6. Map numbers to fields (heuristic):
    - If 4+ numbers: quantity, avg_price, current_price, market_value
    - If 2-3 numbers: quantity and market_value (at minimum)
-5. Detect currency (default EUR if not found)
+7. Detect currency (default EUR if not found)
+
+**Debug Mode**: Use `investos ingest --debug-parse` to see detailed parsing output including:
+- Holdings section boundaries
+- ISIN candidates and validation results
+- Fallback behavior when no explicit ISIN labels found
 
 ### Cash Position
 - Searches for cash keywords
@@ -98,6 +108,12 @@ The parser uses heuristics to map extracted numbers to fields. This works well f
 - Multi-line holdings
 - Special characters in security names
 - Holdings with very long names
+
+**ISIN Validation Strategy**:
+1. First pass: Find lines near explicit "ISIN" labels (most reliable)
+2. Second pass: Find all ISIN pattern matches in holdings section
+3. Validate each candidate using ISO 6166 checksum (rejects ~90% of false positives)
+4. This prevents false matches like "BRUNNENSTRASSE" from German street addresses
 
 ### When Parsing Fails
 If parsing produces incorrect results:

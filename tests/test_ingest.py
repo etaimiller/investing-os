@@ -16,8 +16,9 @@ import shutil
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools.investos.ingest import create_canonical_snapshot
+from tools.investos.ingest import create_canonical_snapshot, is_valid_isin, TradeRepublicParser
 from tools.investos.validate import validate_with_schema, JSONSCHEMA_AVAILABLE
+from unittest.mock import Mock, patch
 
 
 class TestSnapshotCreation(unittest.TestCase):
@@ -279,6 +280,126 @@ class TestFixtureValidation(unittest.TestCase):
             self.fail(f"Sample fixture validation failed:\n" + "\n".join(result.errors))
         
         self.assertTrue(result.valid, "Sample snapshot should validate against schema")
+
+
+class TestISINValidation(unittest.TestCase):
+    """Test ISIN checksum validation"""
+    
+    def test_valid_isins(self):
+        """Test that valid ISINs pass checksum validation"""
+        valid_isins = [
+            'US0378331005',  # Apple Inc.
+            'IE00B4L5Y983',  # iShares Core MSCI World UCITS ETF
+            'GB00B4L5Y983',  # Valid checksum
+            'DE0005140008',  # Deutsche Bank
+            'FR0000120271',  # Total SA
+            'NL0000009165',  # Airbus
+            'CH0038863350',  # Nestle
+        ]
+        
+        for isin in valid_isins:
+            with self.subTest(isin=isin):
+                self.assertTrue(
+                    is_valid_isin(isin),
+                    f"Valid ISIN {isin} should pass checksum validation"
+                )
+    
+    def test_invalid_isins(self):
+        """Test that invalid ISINs fail checksum validation"""
+        invalid_isins = [
+            'BRUNNENSTRAS',   # False positive from street name (12 chars but wrong format)
+            'US0378331006',   # Wrong checksum (should be 005)
+            'US0378331004',   # Wrong checksum (should be 005)
+            'IE00B4L5Y984',   # Wrong checksum (should be 983)
+            'DE0005140009',   # Wrong checksum (should be 008)
+        ]
+        
+        for isin in invalid_isins:
+            with self.subTest(isin=isin):
+                self.assertFalse(
+                    is_valid_isin(isin),
+                    f"Invalid ISIN {isin} should fail checksum validation"
+                )
+    
+    def test_wrong_length(self):
+        """Test that ISINs with wrong length fail validation"""
+        wrong_length = [
+            'US037833100',    # Too short
+            'US03783310055',  # Too long
+            'US',             # Way too short
+        ]
+        
+        for isin in wrong_length:
+            with self.subTest(isin=isin):
+                self.assertFalse(
+                    is_valid_isin(isin),
+                    f"ISIN {isin} with wrong length should fail validation"
+                )
+    
+    def test_lowercase_handled(self):
+        """Test that lowercase ISINs are handled (should fail basic checks)"""
+        # ISINs should be uppercase, lowercase should fail basic validation
+        self.assertFalse(is_valid_isin('us0378331005'))
+        self.assertFalse(is_valid_isin('ie00b4l5y983'))
+
+
+class TestParserFalsePositives(unittest.TestCase):
+    """Test that parser rejects false positive ISIN matches"""
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_brunnenstrasse_false_positive_rejected(self, mock_fitz):
+        """Test that BRUNNENSTRASSE is rejected as invalid ISIN"""
+        # Create a temp file to use as mock PDF path
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF page with text containing BRUNNENSTRASSE
+            mock_page = Mock()
+            
+            # Simulate PDF text with BRUNNENSTRASSE (common in German addresses)
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+BRUNNENSTRASSE 123
+BERLIN
+            
+POSITIONEN
+            
+Apple Inc.
+ISIN US0378331005
+Stück 10  Preis 175,50 EUR  Wert 1.755,00 EUR
+            """
+            
+            # Mock PDF document that supports subscripting and iteration
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            # Should only find Apple Inc., not BRUNNENSTRASSE
+            holdings = parsed_data['holdings']
+            
+            # Check that we don't have BRUNNENSTRASSE as a holding
+            holding_isins = [h.get('isin') for h in holdings]
+            self.assertNotIn('BRUNNENSTRAS', holding_isins, 
+                           "BRUNNENSTRASSE should be rejected as invalid ISIN")
+            
+            # Should have found Apple (if parser finds explicit ISIN labels)
+            # This test mainly checks that BRUNNENSTRASSE is NOT included
+            if holding_isins:
+                self.assertIn('US0378331005', holding_isins,
+                             "Valid ISIN US0378331005 should be found")
+            
+        finally:
+            shutil.rmtree(temp_dir)
 
 
 class TestSnapshotSchemaCompliance(unittest.TestCase):

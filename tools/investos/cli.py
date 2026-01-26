@@ -224,6 +224,7 @@ def cmd_ingest(args, repo_root: Path, config, logger) -> int:
     pdf_path = Path(args.pdf)
     account_name = args.account if hasattr(args, 'account') and args.account else 'unknown'
     export_csv = not args.no_csv if hasattr(args, 'no_csv') else True
+    debug_parse = args.debug_parse if hasattr(args, 'debug_parse') else False
     
     # Make path absolute if needed
     if not pdf_path.is_absolute():
@@ -232,10 +233,12 @@ def cmd_ingest(args, repo_root: Path, config, logger) -> int:
     print(f"Ingesting Trade Republic PDF...")
     print(f"  Source: {pdf_path}")
     print(f"  Account: {account_name}")
+    if debug_parse:
+        print(f"  Debug mode: ENABLED")
     print()
     
     try:
-        result = ingest_pdf(pdf_path, repo_root, config, account_name, export_csv)
+        result = ingest_pdf(pdf_path, repo_root, config, account_name, export_csv, debug_parse)
         
         # Log paths
         if result.get('raw_pdf_path'):
@@ -331,6 +334,7 @@ def main(argv: List[str] = None) -> int:
     ingest_parser.add_argument('--pdf', required=True, help='Path to Trade Republic PDF')
     ingest_parser.add_argument('--account', help='Account name (default: unknown)')
     ingest_parser.add_argument('--no-csv', action='store_true', help='Skip CSV export')
+    ingest_parser.add_argument('--debug-parse', action='store_true', help='Enable debug output for PDF parsing')
     
     # scaffold command with subcommands
     scaffold_parser = subparsers.add_parser('scaffold', help='Create templates')
