@@ -374,9 +374,12 @@ class TradeRepublicParser:
                 print(f"  ... ({len(block_lines) - 15} more lines)")
         
         # Extract fields (with metadata for debug)
-        name = self._extract_name(block_lines, isin_line_idx - block_start, isin)
+        # Calculate ISIN line offset within block
+        isin_offset_in_block = isin_line_idx - block_start
+        
+        name = self._extract_name(block_lines, isin_offset_in_block, isin)
         quantity, qty_method = self._extract_quantity_with_meta(block_lines, block_start)
-        market_value, mv_method = self._extract_market_value_with_meta(block_lines, block_start)
+        market_value, mv_method = self._extract_market_value_with_meta(block_lines, block_start, isin_offset_in_block)
         currency = self._extract_currency(block_text)
         
         # Debug output for extraction methods (first 2 holdings only)
@@ -508,9 +511,15 @@ class TradeRepublicParser:
         
         return None, None
     
-    def _extract_market_value_with_meta(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+    def _extract_market_value_with_meta(self, block_lines: List[str], block_start: int, isin_offset: int) -> Tuple[Optional[float], Optional[str]]:
         """
         Extract market value with metadata about extraction method.
+        
+        Args:
+            block_lines: Lines in the block
+            block_start: Absolute line index where block starts
+            isin_offset: Offset of ISIN line within block_lines
+        
         Returns: (market_value, method_description)
         """
         block_text = '\n'.join(block_lines)
@@ -520,12 +529,12 @@ class TradeRepublicParser:
         
         if has_kurswert_header:
             # Table layout: use column-based extraction
-            return self._extract_market_value_column_based(block_lines, block_start)
+            return self._extract_market_value_column_based(block_lines, block_start, isin_offset)
         
         # Fallback: labeled pattern extraction
         return self._extract_market_value_labeled(block_lines, block_start)
     
-    def _extract_market_value_column_based(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
+    def _extract_market_value_column_based(self, block_lines: List[str], block_start: int, isin_offset: int) -> Tuple[Optional[float], Optional[str]]:
         """
         Extract market value using deterministic after-date rule.
         
@@ -533,26 +542,33 @@ class TradeRepublicParser:
         - Fixed format: quantity, name, ISIN, metadata, price, date, market_value
         - ALWAYS two numbers per holding: price before date, market_value after date
         - Rule: Take FIRST parseable number AFTER the date line
+        
+        Critical: Only accept dates that occur AFTER the ISIN line to avoid
+        matching header dates like "... zum 26.01.2026"
         """
         # Find date line (DD.MM.YYYY format) - scan forward from ISIN
+        # ONLY consider dates AFTER the ISIN line (ignore header dates)
         date_pattern = re.compile(r'\b\d{2}\.\d{2}\.\d{4}\b')
         date_line_idx = None
         
         for i, line in enumerate(block_lines):
-            if date_pattern.search(line):
+            # Critical: only accept dates AFTER ISIN line
+            if i > isin_offset and date_pattern.search(line):
                 date_line_idx = i
                 break
         
-        # If no date found, cannot extract market value deterministically
+        # If no date found after ISIN, cannot extract market value deterministically
         if date_line_idx is None:
             if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
-                print(f"[DEBUG] No date line found - cannot extract market_value")
+                print(f"[DEBUG] ISIN line offset: {isin_offset}")
+                print(f"[DEBUG] No per-holding date found after ISIN - cannot extract market_value")
             return None, None
         
         # Debug output for first 3 holdings
         if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+            print(f"[DEBUG] ISIN line offset: {isin_offset}")
             date_line_text = block_lines[date_line_idx].strip()
-            print(f"[DEBUG] Date line at index {date_line_idx}: {self._redact_line(date_line_text)}")
+            print(f"[DEBUG] Date line at offset {date_line_idx} (after ISIN): {self._redact_line(date_line_text)}")
         
         # Money pattern: accept German, plain, and dot-decimal formats
         # Examples: "1.234,56" or "1234,56" or "1234.56"

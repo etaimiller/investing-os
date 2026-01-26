@@ -723,6 +723,65 @@ ISIN: DE0005140008
         
         finally:
             shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_header_date_ignored(self, mock_fitz):
+        """Test that header date (zum XX.XX.XXXX) is ignored, only per-holding date used"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with header date that should be IGNORED
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT zum 01.01.2026
+
+POSITIONEN
+STK. / NOMINALE | WERTPAPIERBEZEICHNUNG | KURS PRO STÜCK | KURSWERT IN EUR
+
+5,00 Stk.
+Test Security
+ISIN: DE0005140008
+WKN: 123456
+250,00
+15.01.2026
+1.250,00
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 1 holding
+            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
+            
+            test_sec = holdings[0]
+            self.assertEqual(test_sec['isin'], 'DE0005140008')
+            
+            # Should extract market value using per-holding date (15.01.2026)
+            # NOT header date (01.01.2026)
+            # Market value after 15.01.2026 is 1.250,00
+            if test_sec.get('market_data'):
+                self.assertIsNotNone(test_sec['market_data'].get('market_value'),
+                                   "Should extract market value after per-holding date")
+                self.assertAlmostEqual(test_sec['market_data']['market_value'],
+                                     1250.00, places=2,
+                                     msg="Should use date after ISIN, not header date")
+        
+        finally:
+            shutil.rmtree(temp_dir)
 
 
 class TestSnapshotSchemaCompliance(unittest.TestCase):
