@@ -402,6 +402,114 @@ Stück 10  Preis 175,50 EUR  Wert 1.755,00 EUR
             shutil.rmtree(temp_dir)
 
 
+class TestBlockParsing(unittest.TestCase):
+    """Test block-based parsing of holdings"""
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_block_parsing_extracts_name_quantity_value(self, mock_fitz):
+        """Test that block parsing extracts name, quantity, and market value"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF page with realistic Trade Republic layout
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+Portfolio Value: 10.000,00 EUR
+
+POSITIONEN
+
+Apple Inc.
+ISIN: US0378331005
+WKN: 865985
+Stück 10,00
+Einstandskurs 150,00 EUR
+Kurs 175,50 EUR
+Wert 1.755,00 EUR
+Gewinn +255,00 EUR
+
+iShares Core MSCI World UCITS ETF USD (Acc)
+ISIN: IE00B4L5Y983
+WKN: A0RPWH
+Anteile 50,00
+Einstandskurs 70,00 EUR
+Kurs 75,25 EUR
+Kurswert 3.762,50 EUR
+Gewinn +262,50 EUR
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 2 holdings
+            self.assertEqual(len(holdings), 2, "Should extract 2 holdings")
+            
+            # Check Apple Inc.
+            apple = next((h for h in holdings if h['isin'] == 'US0378331005'), None)
+            self.assertIsNotNone(apple, "Should find Apple Inc.")
+            
+            if apple:
+                self.assertEqual(apple['name'], 'Apple Inc.', 
+                               "Should extract correct name for Apple")
+                self.assertIsNotNone(apple['quantity'], 
+                                   "Should extract quantity for Apple")
+                self.assertAlmostEqual(apple['quantity'], 10.0, places=1,
+                                     msg="Should extract correct quantity for Apple")
+                
+                # Check market data
+                self.assertIsNotNone(apple.get('market_data'), 
+                                   "Should have market data for Apple")
+                if apple.get('market_data'):
+                    self.assertIsNotNone(apple['market_data'].get('market_value'),
+                                       "Should extract market value for Apple")
+                    self.assertAlmostEqual(apple['market_data']['market_value'], 
+                                         1755.0, places=1,
+                                         msg="Should extract correct market value for Apple")
+                    self.assertEqual(apple['market_data']['currency'], 'EUR',
+                                   "Should extract currency for Apple")
+            
+            # Check iShares ETF
+            ishares = next((h for h in holdings if h['isin'] == 'IE00B4L5Y983'), None)
+            self.assertIsNotNone(ishares, "Should find iShares ETF")
+            
+            if ishares:
+                # Name should contain "iShares" but not "ISIN"
+                self.assertIn('iShares', ishares['name'],
+                            "Should extract name containing 'iShares'")
+                self.assertNotIn('ISIN', ishares['name'],
+                               "Name should not contain 'ISIN'")
+                
+                self.assertIsNotNone(ishares['quantity'],
+                                   "Should extract quantity for iShares")
+                self.assertAlmostEqual(ishares['quantity'], 50.0, places=1,
+                                     msg="Should extract correct quantity for iShares")
+                
+                # Check market data
+                if ishares.get('market_data'):
+                    self.assertIsNotNone(ishares['market_data'].get('market_value'),
+                                       "Should extract market value for iShares")
+                    self.assertAlmostEqual(ishares['market_data']['market_value'],
+                                         3762.5, places=1,
+                                         msg="Should extract correct market value for iShares")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+
+
 class TestSnapshotSchemaCompliance(unittest.TestCase):
     """Test that generated snapshots comply with schema"""
     

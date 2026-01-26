@@ -192,13 +192,14 @@ class TradeRepublicParser:
     
     def parse_holdings_table(self, text: str) -> List[Dict[str, Any]]:
         """
-        Parse holdings table from PDF text with improved ISIN detection.
+        Parse holdings table from PDF text with block-based extraction.
         
         Strategy:
         1. Find holdings section (POSITIONEN)
         2. Find lines with "ISIN" labels
         3. Extract ISIN candidates and validate checksums
-        4. Parse holdings only for valid ISINs
+        4. For each valid ISIN, extract a block of lines around it
+        5. Parse name/quantity/value from the block
         """
         holdings = []
         lines = text.split('\n')
@@ -223,12 +224,16 @@ class TradeRepublicParser:
             
             if self.debug:
                 print(f"[DEBUG] Searching {len(search_lines)} lines near ISIN labels")
+                print(f"[DEBUG] ISIN label lines: {isin_label_lines}")
         else:
             # Fallback: search entire holdings section
             search_lines = list(range(section_start, section_end))
             
             if self.debug:
                 print(f"[DEBUG] No ISIN labels found, searching entire section ({section_end - section_start} lines)")
+        
+        # Track which ISINs we've already processed to avoid duplicates
+        processed_isins = set()
         
         # Extract and validate ISINs
         for i in search_lines:
@@ -242,6 +247,10 @@ class TradeRepublicParser:
                 candidate = match.group(1)
                 self.isin_candidates += 1
                 
+                # Skip if already processed
+                if candidate in processed_isins:
+                    continue
+                
                 # Validate checksum
                 if not is_valid_isin(candidate):
                     if self.debug:
@@ -250,14 +259,15 @@ class TradeRepublicParser:
                     continue
                 
                 self.valid_isins += 1
+                processed_isins.add(candidate)
                 
                 if self.debug:
                     # Redacted line preview (no amounts)
                     preview = line[:50].replace(candidate, 'ISIN***')
                     print(f"[DEBUG] Valid ISIN found on line {i}: {candidate[:2]}...{candidate[-2:]} | {preview}...")
                 
-                # Parse holding data
-                holding = self._parse_holding_row(line, candidate, lines, i)
+                # Parse holding using block approach
+                holding = self._parse_holding_block(candidate, i, lines, isin_label_lines)
                 if holding:
                     holdings.append(holding)
         
@@ -266,57 +276,99 @@ class TradeRepublicParser:
         
         return holdings
     
-    def _parse_holding_row(self, line: str, isin: str, all_lines: List[str], line_idx: int) -> Optional[Dict[str, Any]]:
-        """Parse a single holding row"""
-        # Try to extract numeric values from line
-        # Look for patterns like: 10 150.00 175.50 1755.00
+    def _redact_line(self, line: str) -> str:
+        """Redact digits in a line for debug output"""
+        return re.sub(r'\d', 'X', line)
+    
+    def _parse_holding_block(self, isin: str, isin_line_idx: int, all_lines: List[str], 
+                            isin_label_lines: List[int]) -> Optional[Dict[str, Any]]:
+        """
+        Parse holding data using block-based extraction around the ISIN line.
         
-        # Remove ISIN from line for cleaner parsing
-        cleaned_line = line.replace(isin, ' ')
+        Args:
+            isin: The validated ISIN
+            isin_line_idx: Line index where ISIN was found
+            all_lines: All lines from the PDF text
+            isin_label_lines: List of line indices with "ISIN" labels
         
-        # Extract all numbers (with optional decimals and thousand separators)
-        number_pattern = re.compile(r'[-+]?\d{1,3}(?:[,.\s]\d{3})*(?:[.,]\d+)?')
-        numbers = number_pattern.findall(cleaned_line)
+        Returns:
+            Dict with holding data or None if extraction fails
+        """
+        # Determine block boundaries
+        # Start: Look back up to 8 lines, but stop at empty lines or previous ISIN
+        block_start = max(0, isin_line_idx - 8)
         
-        # Clean numbers (remove thousand separators, convert decimal comma to dot)
-        cleaned_numbers = []
-        for num in numbers:
-            # Remove spaces and thousand separators
-            num = num.replace(' ', '').replace(',', '.')
-            # Handle German format (comma as decimal)
-            if '.' in num and num.count('.') > 1:
-                # Multiple dots means they're thousand separators
-                num = num.replace('.', '', num.count('.') - 1)
-            try:
-                cleaned_numbers.append(float(num))
-            except ValueError:
-                continue
+        # Find previous ISIN line
+        prev_isin_line = None
+        for label_line in reversed(isin_label_lines):
+            if label_line < isin_line_idx:
+                prev_isin_line = label_line
+                break
         
-        # Try to extract security name (text before ISIN)
-        isin_pos = line.find(isin)
-        name = line[:isin_pos].strip() if isin_pos > 0 else f"Unknown ({isin})"
+        # If there's a previous ISIN, don't overlap with it
+        if prev_isin_line is not None:
+            # Start after previous ISIN, and look for empty line boundary
+            candidate_start = prev_isin_line + 1
+            
+            # Find first empty line after previous ISIN as natural boundary
+            for i in range(candidate_start, isin_line_idx):
+                if i < len(all_lines) and not all_lines[i].strip():
+                    candidate_start = i + 1
+                    break
+            
+            block_start = max(block_start, candidate_start)
         
-        # Guess which numbers are which based on typical Trade Republic format
-        # Expected: quantity, avg_price, current_price, market_value, gain_loss
-        quantity = None
-        avg_price = None
-        current_price = None
-        market_value = None
+        # Find next ISIN line for block_end
+        next_isin_line = None
+        for label_line in isin_label_lines:
+            if label_line > isin_line_idx:
+                next_isin_line = label_line
+                break
         
-        if len(cleaned_numbers) >= 4:
-            # Likely have: qty, avg_buy, curr_price, value
-            quantity = cleaned_numbers[0]
-            avg_price = cleaned_numbers[1]
-            current_price = cleaned_numbers[2]
-            market_value = cleaned_numbers[3]
-        elif len(cleaned_numbers) >= 2:
-            # At minimum we might have quantity and value
-            quantity = cleaned_numbers[0]
-            market_value = cleaned_numbers[-1]
+        if next_isin_line:
+            block_end = next_isin_line
+        else:
+            # Last holding - cap at +20 lines
+            block_end = min(len(all_lines), isin_line_idx + 20)
         
-        # Detect currency (default to EUR for Trade Republic)
-        currency_match = self.CURRENCY_PATTERN.search(line)
-        currency = currency_match.group(1) if currency_match else 'EUR'
+        # Extract block
+        block_lines = all_lines[block_start:block_end]
+        block_text = '\n'.join(block_lines)
+        
+        # Debug output for first 2 holdings only
+        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) < 2:
+            if not hasattr(self, '_debug_holdings_shown'):
+                self._debug_holdings_shown = []
+            self._debug_holdings_shown.append(isin)
+            
+            print(f"\n[DEBUG] Block for ISIN {isin[:2]}...{isin[-2:]} (lines {block_start}-{block_end}):")
+            for i, line in enumerate(block_lines[:15]):  # Show first 15 lines max
+                redacted = self._redact_line(line)
+                print(f"  [{block_start + i:3d}] {redacted[:80]}")
+            if len(block_lines) > 15:
+                print(f"  ... ({len(block_lines) - 15} more lines)")
+        
+        # Extract fields
+        name = self._extract_name(block_lines, isin_line_idx - block_start, isin)
+        quantity = self._extract_quantity(block_text)
+        market_value = self._extract_market_value(block_text)
+        currency = self._extract_currency(block_text)
+        
+        # Per-holding warnings
+        warnings = []
+        if not name or 'ISIN' in name:
+            warnings.append(f"Could not extract name for {isin}")
+            name = f"Unknown ({isin})"
+        if quantity is None:
+            warnings.append(f"Could not extract quantity for {isin}")
+        if market_value is None:
+            warnings.append(f"Could not extract market value for {isin}")
+        
+        # Add warnings to parser warnings
+        for warning in warnings:
+            if self.debug:
+                print(f"[DEBUG] {warning}")
+            self.warnings.append(warning)
         
         return {
             'security_id': isin,
@@ -324,17 +376,166 @@ class TradeRepublicParser:
             'name': name,
             'quantity': quantity,
             'currency': currency,
-            'cost_basis': {
-                'average_price': avg_price,
-                'total_cost': quantity * avg_price if (quantity and avg_price) else None,
-                'currency': currency
-            } if avg_price else None,
+            'cost_basis': None,  # Don't invent cost basis
             'market_data': {
-                'price': current_price,
                 'market_value': market_value,
                 'currency': currency
-            } if current_price or market_value else None
+            } if market_value is not None else None
         }
+    
+    def _extract_name(self, block_lines: List[str], isin_line_offset: int, isin: str) -> Optional[str]:
+        """Extract security name from lines above ISIN (may span multiple lines)"""
+        # Patterns for lines that are definitely NOT names (field labels/headers)
+        # More restrictive - only match lines that START with these or are mostly these keywords
+        field_label_pattern = re.compile(
+            r'^\s*(ISIN|WKN|Stück|Stk\.?|Anteile|Kurs|Einstandskurs|Wert|Kurswert|Gesamtwert|'
+            r'Gewinn|Verlust|Depot|Positionen|Position|Datum|Seite|Page|Portfolio)\s*[:=]',
+            re.IGNORECASE
+        )
+        
+        # Collect potential name lines above ISIN (closest first)
+        name_lines = []
+        
+        for i in range(isin_line_offset - 1, max(-1, isin_line_offset - 5), -1):
+            if i < 0 or i >= len(block_lines):
+                continue
+            
+            line = block_lines[i].strip()
+            
+            # Skip empty lines
+            if not line:
+                # Empty line signals end of name
+                if name_lines:
+                    break
+                continue
+            
+            # Skip field label lines (but allow lines that contain currency codes in product names)
+            if field_label_pattern.match(line):
+                # Stop if we hit a field label
+                break
+            
+            # Skip lines that are mostly numbers (more than 50% digits)
+            digit_count = len(re.findall(r'\d', line))
+            if digit_count > 0 and digit_count > len(line) // 2:
+                continue
+            
+            # Skip lines that look like they contain ISIN pattern
+            if isin in line or re.search(r'\bISIN\s*:', line, re.IGNORECASE):
+                continue
+            
+            # This looks like a name line
+            name_lines.insert(0, line)  # Insert at beginning to maintain order
+            
+            # For now, take only the closest line (most common case)
+            # Multi-line names are rare and harder to detect reliably
+            break
+        
+        if name_lines:
+            # Join multi-line names with space
+            name = ' '.join(name_lines)
+            # Clean up extra whitespace
+            name = re.sub(r'\s+', ' ', name).strip()
+            return name
+        
+        return None
+    
+    def _extract_quantity(self, block_text: str) -> Optional[float]:
+        """Extract quantity using labeled patterns (DE + EN)"""
+        # Try labeled patterns first
+        quantity_patterns = [
+            r'(?:Stk\.?|Stück|Anteile|Qty|Quantity)\s*[:=]?\s*([0-9][0-9\.,\s]*)',
+            r'\b([0-9][0-9\.,\s]*)\s+(?:Stk\.?|Stück|Anteile)',
+        ]
+        
+        for pattern in quantity_patterns:
+            match = re.search(pattern, block_text, re.IGNORECASE)
+            if match:
+                qty_str = match.group(1)
+                qty = self._parse_number(qty_str)
+                if qty is not None and qty > 0:
+                    return qty
+        
+        return None
+    
+    def _extract_market_value(self, block_text: str) -> Optional[float]:
+        """Extract market value using labeled patterns"""
+        # Try labeled patterns first (DE + EN)
+        # These are more specific and reliable
+        value_patterns = [
+            r'(?:Wert|Kurswert|Gesamtwert)\s*[:=]?\s*([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)',
+            r'(?:Value|Market Value)\s*[:=]?\s*([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)',
+        ]
+        
+        for pattern in value_patterns:
+            match = re.search(pattern, block_text, re.IGNORECASE)
+            if match:
+                value_str = match.group(1)
+                value = self._parse_number(value_str)
+                if value is not None and value > 0:
+                    return value
+        
+        # Fallback: Look for lines with "Wert" or "Value" and extract number
+        # This is more conservative than taking the largest number
+        lines = block_text.split('\n')
+        for line in lines:
+            if re.search(r'\b(Wert|Kurswert|Gesamtwert|Value)\b', line, re.IGNORECASE):
+                # Extract number with currency from this line only
+                number_pattern = re.compile(r'([0-9][0-9\.,\s]*)\s*(?:EUR|USD|GBP|CHF)')
+                match = number_pattern.search(line)
+                if match:
+                    value_str = match.group(1)
+                    value = self._parse_number(value_str)
+                    if value is not None and value > 0:
+                        return value
+        
+        return None
+    
+    def _extract_currency(self, block_text: str) -> str:
+        """Extract currency code from block, default to EUR"""
+        match = self.CURRENCY_PATTERN.search(block_text)
+        return match.group(1) if match else 'EUR'
+    
+    def _parse_number(self, num_str: str) -> Optional[float]:
+        """Parse number string handling German/European formatting"""
+        if not num_str:
+            return None
+        
+        # Remove spaces
+        num_str = num_str.strip().replace(' ', '')
+        
+        # Handle different decimal formats
+        # German: 1.234,56 or 1234,56
+        # English: 1,234.56 or 1234.56
+        
+        # Count commas and dots
+        comma_count = num_str.count(',')
+        dot_count = num_str.count('.')
+        
+        if comma_count > 0 and dot_count > 0:
+            # Both present - determine which is decimal separator
+            last_comma_pos = num_str.rfind(',')
+            last_dot_pos = num_str.rfind('.')
+            
+            if last_comma_pos > last_dot_pos:
+                # German format: 1.234,56
+                num_str = num_str.replace('.', '').replace(',', '.')
+            else:
+                # English format: 1,234.56
+                num_str = num_str.replace(',', '')
+        elif comma_count > 1:
+            # Multiple commas - thousand separators: 1,234,567
+            num_str = num_str.replace(',', '')
+        elif dot_count > 1:
+            # Multiple dots - thousand separators: 1.234.567
+            num_str = num_str.replace('.', '', dot_count - 1)
+        elif comma_count == 1:
+            # Single comma - likely decimal: 1234,56
+            num_str = num_str.replace(',', '.')
+        
+        try:
+            return float(num_str)
+        except ValueError:
+            return None
     
     def parse_cash_position(self, text: str) -> Optional[Dict[str, Any]]:
         """
