@@ -526,7 +526,14 @@ class TradeRepublicParser:
         return self._extract_market_value_labeled(block_lines, block_start)
     
     def _extract_market_value_column_based(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
-        """Extract market value using column header and date heuristics"""
+        """
+        Extract market value using column header and date heuristics.
+        
+        For Trade Republic table layout:
+        - Columns: "KURS PRO STÜCK" and "KURSWERT IN EUR"
+        - After date, typically see: price-per-unit, then total market value
+        - Choose largest as market value
+        """
         # Find date lines (DD.MM.YYYY format)
         date_pattern = re.compile(r'\b\d{2}\.\d{2}\.\d{4}\b')
         date_line_idx = None
@@ -536,11 +543,12 @@ class TradeRepublicParser:
                 date_line_idx = i
                 break
         
-        # Extract all money-like numbers (German format)
-        # Exclude quantity lines (those matching number + Stk/Stück/Anteile)
-        money_pattern = re.compile(r'\b([0-9][0-9\.,]+)\b')
+        # Broader money parsing: accept German, plain, and dot-decimal formats
+        # Examples: "1.234,56" or "1234,56" or "1234.56"
+        money_pattern = re.compile(r'\b([0-9]+(?:[.,][0-9]+)*)\b')
         qty_line_pattern = re.compile(r'^\s*[0-9][0-9\.,]*\s*(Stk\.?|Stück|Anteile)\s*$', re.IGNORECASE)
         
+        # Extract all money-like numbers with their line indices
         money_candidates = []
         for i, line in enumerate(block_lines):
             # Skip quantity lines
@@ -550,26 +558,81 @@ class TradeRepublicParser:
             # Find all numbers in this line
             for match in money_pattern.finditer(line):
                 num_str = match.group(1)
-                # Must have at least one separator to be money-like
+                # Must have at least one separator (. or ,) to be money-like
                 if ',' in num_str or '.' in num_str:
                     num = self._parse_number(num_str)
                     if num is not None and num > 0:
-                        money_candidates.append((i, num, line))
+                        money_candidates.append((i, num, num_str))
+        
+        # Debug output for first 3 holdings
+        if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+            if date_line_idx is not None:
+                print(f"[DEBUG] Date line found at index {date_line_idx}: {block_lines[date_line_idx][:50]}")
+            else:
+                print(f"[DEBUG] No date line found")
+            
+            if money_candidates:
+                print(f"[DEBUG] Money candidates: {len(money_candidates)}")
+                for idx, val, orig_str in money_candidates[:5]:  # Show first 5
+                    print(f"[DEBUG]   line {block_start + idx}: {orig_str} -> {val}")
         
         if not money_candidates:
+            if self.debug:
+                print(f"[DEBUG] No money candidates found")
             return None, None
         
-        # Heuristic A: If there's a date, take first money-like number AFTER the date
+        # NEW HEURISTIC: If there's a date, look at next 4 lines after date
         if date_line_idx is not None:
-            for line_idx, value, line in money_candidates:
-                if line_idx > date_line_idx:
-                    line_num = block_start + line_idx
-                    return value, f"after-date line {line_num}"
+            # Get candidates from next 4 lines after date
+            after_date_candidates = [
+                (idx, val, orig_str) for idx, val, orig_str in money_candidates
+                if idx > date_line_idx and idx <= date_line_idx + 4
+            ]
+            
+            if len(after_date_candidates) >= 2:
+                # Multiple candidates: choose the LARGEST (likely market value, not price-per-unit)
+                largest_idx, largest_val, largest_str = max(after_date_candidates, key=lambda x: x[1])
+                line_num = block_start + largest_idx
+                
+                if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                    print(f"[DEBUG] Selected largest of {len(after_date_candidates)} after-date candidates: {largest_val}")
+                
+                return largest_val, f"largest-after-date line {line_num}"
+            
+            elif len(after_date_candidates) == 1:
+                # Single candidate: use it
+                idx, val, orig_str = after_date_candidates[0]
+                line_num = block_start + idx
+                
+                if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                    print(f"[DEBUG] Single candidate after date: {val}")
+                
+                return val, f"single-after-date line {line_num}"
+            
+            # else: fall through to no-date fallback
         
-        # Heuristic B: Take the last money-like number
-        last_idx, last_value, last_line = money_candidates[-1]
-        line_num = block_start + last_idx
-        return last_value, f"last-number line {line_num}"
+        # Fallback: No date or no candidates after date
+        # Choose the largest money-like number in entire block (excluding quantity)
+        if money_candidates:
+            largest_idx, largest_val, largest_str = max(money_candidates, key=lambda x: x[1])
+            line_num = block_start + largest_idx
+            
+            if self.debug and len(getattr(self, '_debug_holdings_shown', [])) <= 3:
+                if date_line_idx is None:
+                    print(f"[DEBUG] No date - using largest in block: {largest_val}")
+                else:
+                    print(f"[DEBUG] No candidates after date - using largest in block: {largest_val}")
+            
+            # Add warning if date was expected but missing
+            if date_line_idx is None and hasattr(self, 'warnings'):
+                # Only warn once per parse
+                if not hasattr(self, '_warned_no_date'):
+                    self.warnings.append("No date lines found in table layout, using fallback for market value")
+                    self._warned_no_date = True
+            
+            return largest_val, f"largest-in-block line {line_num}"
+        
+        return None, None
     
     def _extract_market_value_labeled(self, block_lines: List[str], block_start: int) -> Tuple[Optional[float], Optional[str]]:
         """Extract market value using labeled patterns (fallback)"""

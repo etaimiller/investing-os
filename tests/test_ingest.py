@@ -578,14 +578,15 @@ WKN: A1CX3T
                 self.assertAlmostEqual(msci['quantity'], 12.345678, places=4,
                                      msg="Should extract correct quantity from number-first format")
                 
-                # Market value should use after-date heuristic
+                # Market value should use largest-after-date heuristic
+                # After date 26.01.2026, there are two numbers: 1.234,56 (price) and 5.678,90 (total value)
+                # Should choose the LARGEST as market value
                 if msci.get('market_data'):
                     self.assertIsNotNone(msci['market_data'].get('market_value'),
                                        "Should extract market value")
-                    # After date 26.01.2026, first number is 1.234,56
                     self.assertAlmostEqual(msci['market_data']['market_value'],
-                                         1234.56, places=2,
-                                         msg="Should extract market value using after-date heuristic")
+                                         5678.90, places=2,
+                                         msg="Should extract largest number after date as market value")
             
             # Check Tesla
             tesla = next((h for h in holdings if h['isin'] == 'US88160R1014'), None)
@@ -601,10 +602,66 @@ WKN: A1CX3T
                                      msg="Should extract correct quantity for Tesla")
                 
                 if tesla.get('market_data'):
-                    # After date 27.01.2026, first number is 789,12
+                    # After date 27.01.2026, two numbers: 789,12 (price) and 3.945,60 (total value)
+                    # Should choose the LARGEST
                     self.assertAlmostEqual(tesla['market_data']['market_value'],
-                                         789.12, places=2,
-                                         msg="Should extract market value for Tesla using after-date heuristic")
+                                         3945.60, places=2,
+                                         msg="Should extract largest number after date as market value")
+        
+        finally:
+            shutil.rmtree(temp_dir)
+    
+    @patch('tools.investos.ingest.fitz')
+    def test_table_layout_single_value_after_date(self, mock_fitz):
+        """Test extraction when only one value appears after date"""
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            mock_pdf_path = temp_dir / 'test.pdf'
+            mock_pdf_path.touch()
+            
+            # Mock PDF with only one value after date (simpler layout)
+            mock_page = Mock()
+            mock_page.get_text.return_value = """
+DEPOT ÜBERSICHT
+
+POSITIONEN
+                                        KURSWERT IN EUR
+
+Apple Inc.
+ISIN: US0378331005
+WKN: 865985
+10,00 Stk.
+26.01.2026
+1.755,50
+            """
+            
+            # Mock PDF document
+            mock_doc = Mock()
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.__len__ = Mock(return_value=1)
+            mock_doc.close = Mock()
+            
+            mock_fitz.open.return_value = mock_doc
+            
+            # Parse the mocked PDF
+            parser = TradeRepublicParser(mock_pdf_path)
+            parsed_data = parser.parse()
+            
+            holdings = parsed_data['holdings']
+            
+            # Should find 1 holding
+            self.assertEqual(len(holdings), 1, "Should extract 1 holding")
+            
+            apple = holdings[0]
+            self.assertEqual(apple['isin'], 'US0378331005')
+            self.assertIn('Apple', apple['name'])
+            
+            # Should extract the single value after date
+            if apple.get('market_data'):
+                self.assertAlmostEqual(apple['market_data']['market_value'],
+                                     1755.50, places=2,
+                                     msg="Should extract single value after date")
         
         finally:
             shutil.rmtree(temp_dir)
