@@ -13,14 +13,15 @@ The `investos` CLI is the primary interface to the Investment OS. It provides a 
 **Dependencies**:
 - **Core CLI** (Step 3): Python stdlib only
 - **PDF Ingestion** (Step 4): PyMuPDF for PDF text extraction
+- **Schema Validation & Valuation** (Step 5): jsonschema, PyYAML
 
 **Installation**:
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install all dependencies (recommended method)
+python3 -m pip install -r requirements.txt
 
 # Or install manually
-pip install PyMuPDF>=1.23.0
+python3 -m pip install PyMuPDF~=1.23 jsonschema~=4.17 PyYAML~=6.0
 ```
 
 **From repository root**:
@@ -43,7 +44,7 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
 # CLI now has full functionality
 ./bin/investos --help
@@ -73,17 +74,21 @@ Run health checks:
 ```
 
 #### `investos validate`
-Validate JSON files:
+Validate JSON files against schemas:
 ```bash
-# With schema validation
-./bin/investos validate --file portfolio/snapshots/2024-01-15-143022.json \
+# Validate portfolio snapshot
+./bin/investos validate --file portfolio/latest.json \
                         --schema schema/portfolio-state.schema.json
 
+# Validate valuation output
+./bin/investos validate --file valuations/outputs/20240127_143022/US0378331005-valuation.json \
+                        --schema schema/valuation-model.schema.json
+
 # JSON syntax only (no schema)
-./bin/investos validate --file valuations/inputs/AAPL.json
+./bin/investos validate --file valuations/inputs/US0378331005.json
 ```
 
-**Note**: Full JSON Schema Draft-07 validation will be enabled in Step 4/5 with jsonschema library. Currently performs basic structure validation.
+**Note**: Uses JSON Schema Draft-07 validation via jsonschema library (Step 5). Reports precise error paths for debugging.
 
 #### `investos scaffold decision`
 Create decision memo template:
@@ -106,6 +111,41 @@ Create research dossier:
 # Creates: research/AAPL/dossier.md
 #          research/AAPL/README.md
 ```
+
+#### `investos value`
+Run valuation analysis on portfolio holdings:
+```bash
+# Value all holdings in latest snapshot
+./bin/investos value --snapshot portfolio/latest.json
+
+# Use specific profile and snapshot
+./bin/investos value --snapshot tests/fixtures/snapshot_minimal.json --profile conservative
+
+# Value single holding by ISIN
+./bin/investos value --snapshot portfolio/latest.json --only-isin US0378331005
+
+# Generate input scaffolds for missing fundamentals
+./bin/investos value --snapshot portfolio/latest.json --emit-scaffolds
+```
+
+**What it does**:
+1. Validates snapshot against schema
+2. Classifies securities (stock/ETF/commodity)
+3. Loads valuation assumptions from YAML profile
+4. For stocks: checks for fundamental inputs in `valuations/inputs/<ISIN>.json`
+5. Generates per-holding valuation outputs
+6. Creates portfolio summary with position sizing and concentration analysis
+7. Outputs written to timestamped directory: `valuations/outputs/<timestamp>/`
+
+**Outputs**:
+- `valuations/outputs/<timestamp>/<ISIN>-valuation.json` - Per-holding analysis
+- `valuations/outputs/<timestamp>/portfolio_summary.json` - Portfolio-level summary
+
+**Optional Inputs**:
+- `valuations/inputs/<ISIN>.json` - User-provided fundamental data for stocks
+- `valuations/assumptions/conservative.yaml` - Valuation assumptions profile
+
+**Deterministic**: Same inputs always produce identical valuation results (excluding timestamps/IDs).
 
 #### `investos ingest`
 Ingest Trade Republic portfolio PDF:

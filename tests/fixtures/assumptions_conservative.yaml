@@ -1,0 +1,96 @@
+# Conservative Valuation Assumptions
+# Used for test fixtures and as default profile
+
+assumption_set_name: conservative
+
+# Revenue Growth Assumptions
+revenue_growth:
+  short_term_rate: 0.07  # 7% for years 1-5
+  long_term_rate: 0.03   # 3% terminal growth (GDP-like)
+  short_term_years: 5
+  rationale: "Conservative growth - below historical averages, sustainable long-term"
+
+# Margin Assumptions (used if not provided in fundamentals)
+margin_assumptions:
+  default_operating_margin: 0.15  # 15% if unknown
+  default_net_margin: 0.10        # 10% if unknown
+  rationale: "Conservative margins - below industry averages"
+
+# Discount Rate (Required Return)
+discount_rate:
+  total_rate: 0.12  # 12% required return
+  components:
+    risk_free_rate: 0.04          # 4% (10-year govt bonds)
+    equity_risk_premium: 0.05     # 5% market risk premium
+    company_specific_risk: 0.03   # 3% additional for individual stock risk
+  rationale: "Conservative required return above market - accounts for individual stock risk"
+
+# Margin of Safety
+margin_of_safety:
+  default_required: 0.25  # 25% MOS for general stocks
+  high_quality: 0.20      # 20% MOS for exceptional businesses
+  speculative: 0.40       # 40% MOS for higher-risk situations
+  rationale: "Conservative margin - protects against valuation errors and unforeseen risks"
+
+# Valuation Multiples (if using multiple-band method)
+valuation_multiples:
+  pe_ratio:
+    low: 12
+    base: 15
+    high: 18
+  price_to_fcf:
+    low: 15
+    base: 20
+    high: 25
+  rationale: "Conservative multiples - below long-term market averages"
+
+# Asset Class Expected Returns (for ETFs/allocation)
+asset_class_returns:
+  equity_developed:
+    expected_return: 0.08  # 8% nominal
+    risk_premium: 0.04
+  equity_emerging:
+    expected_return: 0.10
+    risk_premium: 0.06
+  bonds_government:
+    expected_return: 0.04
+    risk_premium: 0.00
+  commodities:
+    expected_return: 0.03
+    risk_premium: 0.02
+
+# Position Sizing Rules
+position_sizing:
+  max_single_position: 0.15      # 15% max in one stock
+  concentration_warning: 0.10    # Warn at 10%
+  max_sector_exposure: 0.30      # 30% max in one sector
+
+# Quality Thresholds
+quality_criteria:
+  min_roe: 0.15           # 15% return on equity
+  min_roic: 0.12          # 12% return on invested capital
+  max_debt_to_equity: 1.0 # 100% debt/equity ratio
+  min_interest_coverage: 3.0  # 3x EBIT/Interest
+
+# Notes
+notes: |
+  These assumptions represent a conservative baseline for valuation.
+  
+  Key principles:
+  - Lower growth rates than historical averages
+  - Higher discount rates (required returns)
+  - Wider margin of safety requirements
+  - Lower valuation multiples
+  
+  This profile is designed to:
+  1. Avoid overpaying for investments
+  2. Build in protection against errors
+  3. Generate adequate returns with lower risk
+  4. Focus on sustainable, durable businesses
+  
+  Adjust assumptions based on:
+  - Business quality and competitive position
+  - Industry dynamics and cyclicality
+  - Management track record
+  - Capital allocation discipline
+  - Balance sheet strength

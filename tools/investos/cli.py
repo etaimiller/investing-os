@@ -16,7 +16,7 @@ Usage:
 import sys
 import argparse
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 # Import our modules
 from . import __version__
@@ -31,6 +31,7 @@ from .scaffold import (
     scaffold_research_dossier
 )
 from .ingest import ingest_pdf, IngestError
+from .valuation import run_valuation, ValuationError
 
 
 def cmd_status(args, repo_root: Path, config, logger) -> int:
@@ -293,7 +294,120 @@ def cmd_ingest(args, repo_root: Path, config, logger) -> int:
         return 1
 
 
-def main(argv: List[str] = None) -> int:
+def cmd_value(args, repo_root: Path, config, logger) -> int:
+    """Run valuation pipeline on portfolio snapshot"""
+    print("Running valuation pipeline...")
+    print(f"  Snapshot: {args.snapshot}")
+    print(f"  Profile: {args.profile}")
+    if args.only_isin:
+        print(f"  Only ISIN: {args.only_isin}")
+    print()
+    
+    logger.add_path(Path(args.snapshot))
+    logger.set_info('profile', args.profile)
+    
+    # Resolve paths
+    snapshot_path = Path(args.snapshot)
+    if not snapshot_path.is_absolute():
+        snapshot_path = repo_root / snapshot_path
+    
+    # Assumptions path
+    if args.assumptions:
+        assumptions_path = Path(args.assumptions)
+        if not assumptions_path.is_absolute():
+            assumptions_path = repo_root / assumptions_path
+    else:
+        # Default from config or standard location
+        assumptions_path = repo_root / 'valuations' / 'assumptions' / 'conservative.yaml'
+    
+    # Output directory
+    if args.outdir:
+        output_dir = Path(args.outdir)
+        if not output_dir.is_absolute():
+            output_dir = repo_root / output_dir
+    else:
+        # Default: valuations/outputs/<timestamp>/
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir = repo_root / 'valuations' / 'outputs' / timestamp
+    
+    logger.add_path(output_dir)
+    
+    try:
+        # Validate snapshot against schema first
+        from .validate import validate_with_schema
+        schema_path = repo_root / 'schema' / 'portfolio-state.schema.json'
+        
+        print("Validating snapshot against schema...")
+        result = validate_with_schema(snapshot_path, schema_path)
+        
+        if not result.valid:
+            print("✗ Snapshot validation FAILED\n")
+            for error in result.errors:
+                print(f"  - {error}")
+            logger.failure("Snapshot validation failed")
+            return 1
+        
+        print("✓ Snapshot validated\n")
+        
+        # Run valuation
+        valuations, summary = run_valuation(
+            snapshot_path=snapshot_path,
+            assumptions_path=assumptions_path,
+            output_dir=output_dir,
+            profile=args.profile,
+            only_isin=args.only_isin,
+            emit_scaffolds=args.emit_scaffolds
+        )
+        
+        # Print summary
+        print("✓ Valuation complete!")
+        print()
+        print(f"  Output directory: {output_dir.relative_to(repo_root)}")
+        print(f"  Holdings processed: {len(valuations)}")
+        print()
+        
+        # Status breakdown
+        status_counts = summary['valuation_status']
+        print("Status:")
+        print(f"  Complete valuations: {status_counts['complete']}")
+        print(f"  Incomplete valuations: {status_counts['incomplete']}")
+        print(f"  Allocation vehicles: {status_counts['allocation_vehicles']}")
+        print()
+        
+        # Top holdings
+        print("Top 5 Holdings by Weight:")
+        for holding in summary['top_holdings']:
+            print(f"  {holding['weight_pct']:5.1f}% - {holding['name'][:50]}")
+        print()
+        
+        # Warnings
+        if summary['warnings']:
+            print(f"Warnings ({len(summary['warnings'])}):")
+            for warning in summary['warnings'][:10]:  # Show first 10
+                print(f"  ⚠ {warning}")
+            if len(summary['warnings']) > 10:
+                print(f"  ... and {len(summary['warnings']) - 10} more warnings")
+            print()
+        
+        logger.set_info('holdings_processed', len(valuations))
+        logger.set_info('output_dir', str(output_dir))
+        logger.success()
+        
+        return 0
+    
+    except ValuationError as e:
+        print(f"\n✗ Valuation error: {e}", file=sys.stderr)
+        logger.failure(f"Valuation error: {e}")
+        return 1
+    
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     """Main CLI entrypoint"""
     if argv is None:
         argv = sys.argv[1:]
@@ -336,6 +450,15 @@ def main(argv: List[str] = None) -> int:
     ingest_parser.add_argument('--no-csv', action='store_true', help='Skip CSV export')
     ingest_parser.add_argument('--debug-parse', action='store_true', help='Enable debug output for PDF parsing')
     
+    # value command
+    value_parser = subparsers.add_parser('value', help='Run valuation analysis')
+    value_parser.add_argument('--snapshot', default='portfolio/latest.json', help='Path to portfolio snapshot (default: portfolio/latest.json)')
+    value_parser.add_argument('--profile', default='conservative', help='Assumption profile (default: conservative)')
+    value_parser.add_argument('--assumptions', help='Path to assumptions YAML (default: valuations/assumptions/conservative.yaml)')
+    value_parser.add_argument('--outdir', help='Output directory (default: valuations/outputs/<timestamp>)')
+    value_parser.add_argument('--only-isin', help='Only value a single ISIN')
+    value_parser.add_argument('--emit-scaffolds', action='store_true', help='Generate input scaffolds for missing fundamentals')
+    
     # scaffold command with subcommands
     scaffold_parser = subparsers.add_parser('scaffold', help='Create templates')
     scaffold_subparsers = scaffold_parser.add_subparsers(dest='scaffold_type', help='Template type')
@@ -371,6 +494,8 @@ def main(argv: List[str] = None) -> int:
             return cmd_doctor(args, repo_root, config, logger)
         elif args.command == 'validate':
             return cmd_validate(args, repo_root, config, logger)
+        elif args.command == 'value':
+            return cmd_value(args, repo_root, config, logger)
         elif args.command == 'ingest':
             return cmd_ingest(args, repo_root, config, logger)
         elif args.command == 'scaffold':

@@ -9,7 +9,12 @@
   },
   "schema_dir": "schema",
   "valuations": {
-    "default_assumptions_file": "valuations/assumptions/conservative.yaml"
+    "outputs_dir": "valuations/outputs",
+    "inputs_dir": "valuations/inputs",
+    "assumptions_dir": "valuations/assumptions",
+    "default_assumptions_file": "valuations/assumptions/conservative.yaml",
+    "default_profile": "conservative",
+    "default_mos": 0.25
   },
   "monitoring": {
     "watch_rules_file": "monitoring/watch_rules.yaml"

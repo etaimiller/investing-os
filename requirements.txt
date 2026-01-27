@@ -6,5 +6,8 @@
 # PDF text extraction (Step 4: Portfolio ingestion)
 PyMuPDF==1.23.8  # Also known as fitz - for Trade Republic PDF parsing
 
-# JSON Schema validation (Step 4.1: Hardening)
-jsonschema>=4.17.0  # JSON Schema Draft-07 validation for data integrity
+# JSON Schema validation (Step 5: Valuation)
+jsonschema~=4.17  # JSON Schema Draft-07 validation for data integrity
+
+# YAML parsing (Step 5: Valuation)
+PyYAML~=6.0  # YAML assumptions file parsing

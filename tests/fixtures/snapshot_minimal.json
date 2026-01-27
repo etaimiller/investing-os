@@ -1,0 +1,65 @@
+{
+  "snapshot_id": "2026-01-27-120000",
+  "timestamp": "2026-01-27T12:00:00Z",
+  "version": "1.0.0",
+  "source": {
+    "type": "test_fixture",
+    "filename": "snapshot_minimal.json",
+    "file_hash": null
+  },
+  "accounts": [
+    {
+      "account_id": "test-account-001",
+      "account_name": "Test Portfolio",
+      "account_type": "taxable",
+      "currency": "EUR"
+    }
+  ],
+  "holdings": [
+    {
+      "security_id": "US0378331005",
+      "isin": "US0378331005",
+      "name": "Apple Inc.",
+      "security_type": "stock",
+      "quantity": 10,
+      "currency": "USD",
+      "account_id": "test-account-001",
+      "market_data": {
+        "market_value": 1800.00,
+        "currency": "USD"
+      }
+    },
+    {
+      "security_id": "IE00B4L5Y983",
+      "isin": "IE00B4L5Y983",
+      "name": "iShares Core MSCI World UCITS ETF",
+      "security_type": "etf",
+      "quantity": 50,
+      "currency": "EUR",
+      "account_id": "test-account-001",
+      "market_data": {
+        "market_value": 4200.00,
+        "currency": "EUR"
+      }
+    }
+  ],
+  "cash": [
+    {
+      "currency": "EUR",
+      "amount": 500.00,
+      "account_id": "test-account-001"
+    }
+  ],
+  "totals": {
+    "total_market_value": 6000.00,
+    "total_cash": 500.00,
+    "total_portfolio_value": 6500.00,
+    "base_currency": "EUR"
+  },
+  "metadata": {
+    "extraction_method": "test_fixture",
+    "extraction_timestamp": "2026-01-27T12:00:00Z",
+    "warnings": [],
+    "notes": "Minimal test fixture for Step 5 valuation tests"
+  }
+}

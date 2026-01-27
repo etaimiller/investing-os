@@ -98,6 +98,14 @@ drafts/
 work-in-progress/
 temp_analysis/
 
+# Valuation Outputs (contains portfolio-derived sensitive info)
+valuations/outputs/**
+!valuations/outputs/README.md
+
+# Valuation Inputs (may contain proprietary research)
+valuations/inputs/**
+!valuations/inputs/README.md
+
 # Backup Files
 *.bak
 *.backup

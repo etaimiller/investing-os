@@ -1,0 +1,64 @@
+{
+  "_comment": "Test fixture for stock fundamental data",
+  "security_id": "US0378331005",
+  "security_name": "Test Stock Inc.",
+  "data_as_of_date": "2025-12-31",
+  "currency": "USD",
+  "fundamentals": {
+    "revenue": {
+      "current_ttm": 385000000000,
+      "historical_5y": [
+        [2021, 365817000000],
+        [2022, 394328000000],
+        [2023, 383285000000],
+        [2024, 391035000000],
+        [2025, 385000000000]
+      ],
+      "comment": "Trailing twelve months revenue - slight decline YoY"
+    },
+    "earnings": {
+      "net_income_ttm": 100000000000,
+      "historical_5y": [
+        [2021, 94680000000],
+        [2022, 99803000000],
+        [2023, 96995000000],
+        [2024, 93736000000],
+        [2025, 100000000000]
+      ],
+      "comment": "Net income showing recovery in FY2025"
+    },
+    "cash_flow": {
+      "fcf_ttm": 110000000000,
+      "historical_5y": [
+        [2021, 92953000000],
+        [2022, 111443000000],
+        [2023, 99584000000],
+        [2024, 108841000000],
+        [2025, 110000000000]
+      ],
+      "comment": "Strong free cash flow generation"
+    },
+    "balance_sheet": {
+      "total_debt": 106000000000,
+      "cash_and_equivalents": 61000000000,
+      "shareholders_equity": 62000000000,
+      "shares_outstanding": 15550000000,
+      "comment": "Net debt position: $45B (total debt - cash)"
+    },
+    "margins": {
+      "operating_margin": 0.30,
+      "net_margin": 0.26,
+      "comment": "Industry-leading margins - high-quality business"
+    },
+    "returns": {
+      "roe": 0.147,
+      "roic": 0.284,
+      "comment": "Exceptional returns on capital"
+    }
+  },
+  "sources": {
+    "data_provider": "Test fixture - representative values",
+    "links": [],
+    "notes": "Sanitized test data for Step 5 valuation tests"
+  }
+}
