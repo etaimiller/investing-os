@@ -52,7 +52,18 @@ print(paths[-1] if paths else "NO SNAPSHOTS")
 PY
 ```
 
----
+## Makefile shortcuts (recommended)
 
-3. Stage and commit this file with the commit message:
-"Docs: add v1 CLI cheatsheet"
+```bash
+make help  
+make doctor  
+make test  
+
+make ingest PDF=~/Downloads/file.pdf  
+make latest  
+
+make validate SNAPSHOT=portfolio/snapshots/<file>.json  
+make value SNAPSHOT=portfolio/snapshots/<file>.json  
+
+make explain FROM=portfolio/snapshots/A.json TO=portfolio/snapshots/B.json
+```
