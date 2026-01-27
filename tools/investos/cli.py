@@ -32,6 +32,7 @@ from .scaffold import (
 )
 from .ingest import ingest_pdf, IngestError
 from .valuation import run_valuation, ValuationError
+from .explain import run_explanation, ExplainError
 
 
 def cmd_status(args, repo_root: Path, config, logger) -> int:
@@ -407,6 +408,132 @@ def cmd_value(args, repo_root: Path, config, logger) -> int:
         return 1
 
 
+def cmd_explain(args, repo_root: Path, config, logger) -> int:
+    """Explain portfolio changes between two snapshots"""
+    print("Explaining portfolio changes...")
+    print(f"  From: {args.from_snapshot}")
+    print(f"  To: {args.to_snapshot}")
+    print(f"  Format: {args.format}")
+    print()
+    
+    logger.add_path(Path(args.from_snapshot))
+    logger.add_path(Path(args.to_snapshot))
+    
+    # Resolve paths
+    from_path = Path(args.from_snapshot)
+    if not from_path.is_absolute():
+        from_path = repo_root / from_path
+    
+    to_path = Path(args.to_snapshot)
+    if not to_path.is_absolute():
+        to_path = repo_root / to_path
+    
+    # Output directory
+    if args.outdir:
+        output_dir = Path(args.outdir)
+        if not output_dir.is_absolute():
+            output_dir = repo_root / output_dir
+    else:
+        # Default: monitoring/explanations/<timestamp>/
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir = repo_root / 'monitoring' / 'explanations' / timestamp
+    
+    logger.add_path(output_dir)
+    
+    try:
+        # Validate both snapshots first
+        from .validate import validate_with_schema
+        schema_path = repo_root / 'schema' / 'portfolio-state.schema.json'
+        
+        print("Validating snapshots...")
+        result_A = validate_with_schema(from_path, schema_path)
+        result_B = validate_with_schema(to_path, schema_path)
+        
+        if not result_A.valid:
+            print("✗ From snapshot validation FAILED\n")
+            for error in result_A.errors:
+                print(f"  - {error}")
+            logger.failure("From snapshot validation failed")
+            return 1
+        
+        if not result_B.valid:
+            print("✗ To snapshot validation FAILED\n")
+            for error in result_B.errors:
+                print(f"  - {error}")
+            logger.failure("To snapshot validation failed")
+            return 1
+        
+        print("✓ Both snapshots validated\n")
+        
+        # Run explanation
+        report = run_explanation(
+            snapshot_A_path=from_path,
+            snapshot_B_path=to_path,
+            output_dir=output_dir,
+            format_type=args.format,
+            strict=args.strict
+        )
+        
+        # Print summary
+        print("✓ Explanation complete!\n")
+        
+        totals = report['totals']
+        print(f"Portfolio Change:")
+        print(f"  From: {totals['from_total']:,.2f} {totals['base_currency']}")
+        print(f"  To:   {totals['to_total']:,.2f} {totals['base_currency']}")
+        print(f"  Δ:    {totals['delta_abs']:+,.2f} {totals['base_currency']}", end='')
+        if totals['delta_pct'] is not None:
+            print(f" ({totals['delta_pct']*100:+.2f}%)")
+        else:
+            print()
+        print()
+        
+        # Top drivers
+        top_n = min(args.top, len(report['drivers']))
+        print(f"Top {top_n} Drivers:")
+        for driver in report['drivers'][:top_n]:
+            name = driver.get('name', driver.get('currency', driver.get('type')))
+            contrib = driver['contribution_abs']
+            pct = driver.get('contribution_pct_of_portfolio_delta')
+            pct_str = f"({pct*100:+.1f}%)" if pct is not None else ""
+            print(f"  {driver['type']:20s}  {name[:30]:30s}  {contrib:+12,.2f}  {pct_str}")
+        print()
+        
+        # Output location
+        print(f"Output directory: {output_dir.relative_to(repo_root)}")
+        
+        # Warnings
+        if report['warnings']:
+            print(f"\nWarnings ({len(report['warnings'])}):")
+            for warning in report['warnings'][:10]:
+                print(f"  ⚠ {warning}")
+            if len(report['warnings']) > 10:
+                print(f"  ... and {len(report['warnings']) - 10} more warnings")
+        
+        # Stats
+        stats = report['stats']
+        print(f"\nStatistics:")
+        print(f"  Holdings: {stats['holdings_A']} → {stats['holdings_B']}")
+        print(f"  Matched: {stats['matched']}, Added: {stats['added']}, Removed: {stats['removed']}")
+        
+        logger.set_info('delta_abs', totals['delta_abs'])
+        logger.set_info('drivers_count', len(report['drivers']))
+        logger.success("Explanation completed")
+        
+        return 0
+    
+    except ExplainError as e:
+        print(f"\n✗ Explanation error: {e}", file=sys.stderr)
+        logger.failure(f"Explanation error: {e}")
+        return 1
+    
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main CLI entrypoint"""
     if argv is None:
@@ -459,6 +586,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     value_parser.add_argument('--only-isin', help='Only value a single ISIN')
     value_parser.add_argument('--emit-scaffolds', action='store_true', help='Generate input scaffolds for missing fundamentals')
     
+    # explain command
+    explain_parser = subparsers.add_parser('explain', help='Explain portfolio changes between snapshots')
+    explain_parser.add_argument('--from', dest='from_snapshot', required=True, help='From snapshot (earlier)')
+    explain_parser.add_argument('--to', dest='to_snapshot', required=True, help='To snapshot (later)')
+    explain_parser.add_argument('--format', default='json', choices=['json', 'md', 'both'], help='Output format (default: json)')
+    explain_parser.add_argument('--outdir', help='Output directory (default: monitoring/explanations/<timestamp>)')
+    explain_parser.add_argument('--strict', action='store_true', help='Fail if any holding lacks market_value')
+    explain_parser.add_argument('--top', type=int, default=10, help='Number of top drivers to show in console (default: 10)')
+    
     # scaffold command with subcommands
     scaffold_parser = subparsers.add_parser('scaffold', help='Create templates')
     scaffold_subparsers = scaffold_parser.add_subparsers(dest='scaffold_type', help='Template type')
@@ -496,6 +632,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return cmd_validate(args, repo_root, config, logger)
         elif args.command == 'value':
             return cmd_value(args, repo_root, config, logger)
+        elif args.command == 'explain':
+            return cmd_explain(args, repo_root, config, logger)
         elif args.command == 'ingest':
             return cmd_ingest(args, repo_root, config, logger)
         elif args.command == 'scaffold':

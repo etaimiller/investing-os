@@ -147,6 +147,44 @@ Run valuation analysis on portfolio holdings:
 
 **Deterministic**: Same inputs always produce identical valuation results (excluding timestamps/IDs).
 
+#### `investos explain`
+Explain portfolio changes between two snapshots:
+```bash
+# Basic explanation
+./bin/investos explain \
+  --from portfolio/snapshots/2024-01-15-120000.json \
+  --to portfolio/snapshots/2024-01-22-120000.json
+
+# With markdown summary
+./bin/investos explain \
+  --from tests/fixtures/snapshot_A.json \
+  --to tests/fixtures/snapshot_B.json \
+  --format both
+
+# Strict mode (fail on missing data)
+./bin/investos explain --from A.json --to B.json --strict
+```
+
+**What it does**:
+1. Validates both snapshots against schema
+2. Computes portfolio delta (total value change)
+3. Attributes change to mechanical drivers:
+   - `price_change`: Same quantity, different value (price moved)
+   - `quantity_change`: Bought or sold shares
+   - `new_position`: Opened new holding
+   - `position_removed`: Closed existing holding
+   - `cash_change`: Cash balance changed
+   - `residual_unexplained`: Rounding, fees, timing differences
+4. Outputs deterministic JSON attribution report
+
+**Outputs**:
+- `monitoring/explanations/<timestamp>/explanation.json` - Machine-readable report
+- `monitoring/explanations/<timestamp>/explanation.md` - Optional human summary
+
+**Note**: This is NOT market commentary or news analysis. It's pure mechanical attribution: "What changed?" not "Why did it change?"
+
+**Deterministic**: Same inputs produce identical attribution (excluding timestamps/report IDs).
+
 #### `investos ingest`
 Ingest Trade Republic portfolio PDF:
 ```bash

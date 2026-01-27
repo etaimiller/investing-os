@@ -106,6 +106,10 @@ valuations/outputs/**
 valuations/inputs/**
 !valuations/inputs/README.md
 
+# Portfolio Change Explanations (contains trading activity)
+monitoring/explanations/**
+!monitoring/explanations/README.md
+
 # Backup Files
 *.bak
 *.backup
