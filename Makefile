@@ -17,7 +17,7 @@ doctor:
 	./bin/investos doctor
 
 test:
-	python3 -m unittest -v
+	python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 ingest:
 	@if [ -z "$(PDF)" ]; then \
