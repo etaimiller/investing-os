@@ -82,6 +82,8 @@ portfolio/raw/**
 !portfolio/snapshots/
 portfolio/snapshots/**
 !portfolio/snapshots/template_holdings_snapshot.csv
+# Quarantined legacy snapshots (known invalid)
+portfolio/snapshots/_invalid/
 personal/
 sensitive/
 private/
