@@ -1,4 +1,4 @@
-.PHONY: help doctor test ingest validate value explain latest
+.PHONY: help doctor test ingest validate value explain summarize ask decide latest
 
 help:
 	@echo ""
@@ -11,6 +11,9 @@ help:
 	@echo "  make validate SNAPSHOT=path     Validate snapshot against schema"
 	@echo "  make value SNAPSHOT=path        Run valuation pipeline"
 	@echo "  make explain FROM=A TO=B        Explain change between snapshots"
+	@echo "  make summarize                  Create portfolio state summary"
+	@echo "  make ask Q=\"question\"           Ask portfolio question"
+	@echo "  make decide ISIN=xxx ACTION=yyy Create decision memo"
 	@echo ""
 
 doctor:
@@ -51,3 +54,24 @@ explain:
 		exit 1; \
 	fi
 	./bin/investos explain --from $(FROM) --to $(TO)
+
+summarize:
+	./bin/investos summarize
+
+ask:
+	@if [ -z "$(Q)" ]; then \
+		echo "ERROR: Q=\"question\" is required"; \
+		exit 1; \
+	fi
+	./bin/investos ask "$(Q)"
+
+decide:
+	@if [ -z "$(ISIN)" ] && [ -z "$(ACTION)" ]; then \
+		./bin/investos decide; \
+	elif [ -z "$(ISIN)" ]; then \
+		./bin/investos decide --action $(ACTION); \
+	elif [ -z "$(ACTION)" ]; then \
+		./bin/investos decide --isin $(ISIN); \
+	else \
+		./bin/investos decide --isin $(ISIN) --action $(ACTION); \
+	fi

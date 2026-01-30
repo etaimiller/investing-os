@@ -33,6 +33,9 @@ from .scaffold import (
 from .ingest import ingest_pdf, IngestError
 from .valuation import run_valuation, ValuationError
 from .explain import run_explanation, ExplainError
+from .summarize import run_summarize, SummaryError
+from .ask import run_ask, _create_short_summary, AskError
+from .decide import run_decide, DecideError, VALID_ACTIONS
 
 
 def cmd_status(args, repo_root: Path, config, logger) -> int:
@@ -534,6 +537,215 @@ def cmd_explain(args, repo_root: Path, config, logger) -> int:
         return 1
 
 
+def cmd_summarize(args, repo_root: Path, config, logger) -> int:
+    """Create portfolio state summary"""
+    print("Creating portfolio summary...")
+    print()
+    
+    try:
+        summary = run_summarize(repo_root, config)
+        
+        # Print summary to console
+        print("✓ Summary created!\n")
+        
+        snapshot = summary['snapshot']
+        print(f"Snapshot: {snapshot['snapshot_id']}")
+        print(f"Date: {snapshot['timestamp']}")
+        print()
+        
+        totals = summary['portfolio_totals']
+        print(f"Portfolio Value: {totals['total_portfolio_value']:,.2f} {totals['base_currency']}")
+        print(f"Cash: {totals['total_cash']:,.2f} {totals['base_currency']}")
+        print()
+        
+        counts = summary['holdings_count']
+        print(f"Holdings: {counts['total']} total, {counts['with_market_value']} valued")
+        print()
+        
+        # Type breakdown
+        print("Security Types:")
+        for sec_type, data in summary['security_type_breakdown'].items():
+            print(f"  {sec_type:8s}: {data['count']:2d} holdings, {data['weight_pct']:5.1f}%")
+        print()
+        
+        # Top holdings
+        print("Top 5 Holdings:")
+        for holding in summary['top_holdings']:
+            print(f"  {holding['weight_pct']:5.1f}% - {holding['name'][:50]}")
+        print()
+        
+        # Concentration flags
+        concentration = summary['concentration']
+        if concentration['holdings_over_10pct'] > 0:
+            print(f"⚠ Concentration Flags: {concentration['holdings_over_10pct']} holdings over 10%")
+            for flag in concentration['flags']:
+                print(f"  {flag['weight_pct']:5.1f}% - {flag['name'][:50]}")
+            print()
+        
+        # Recent changes
+        if summary['recent_changes']:
+            print("Recent Changes: Explanation available")
+            changes = summary['recent_changes']
+            if changes.get('delta_pct') is not None:
+                print(f"  Portfolio Δ: {changes['delta_pct']*100:+.2f}%")
+            print()
+        
+        output_path = repo_root / 'analysis' / 'state' / 'summary.json'
+        print(f"Output: {output_path.relative_to(repo_root)}")
+        
+        logger.add_path(output_path)
+        logger.set_info('holdings_count', counts['total'])
+        logger.set_info('portfolio_value', totals['total_portfolio_value'])
+        logger.success("Summary created")
+        
+        return 0
+    
+    except SummaryError as e:
+        print(f"\n✗ Summary error: {e}", file=sys.stderr)
+        logger.failure(f"Summary error: {e}")
+        return 1
+    
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
+def cmd_ask(args, repo_root: Path, config, logger) -> int:
+    """Answer portfolio question using investor lenses"""
+    question = args.question
+    
+    print(f"Analyzing: {question}")
+    print()
+    
+    try:
+        answer, output_path = run_ask(question, repo_root, config)
+        
+        # Print short summary to console
+        short_summary = _create_short_summary(answer)
+        print(short_summary)
+        print()
+        
+        # Show output location
+        rel_path = output_path.relative_to(repo_root)
+        print(f"\n✓ Full analysis saved to: {rel_path}")
+        
+        logger.add_path(output_path)
+        logger.set_info('question', question)
+        logger.success("Question answered")
+        
+        return 0
+    
+    except AskError as e:
+        print(f"\n✗ Error: {e}", file=sys.stderr)
+        logger.failure(f"Ask error: {e}")
+        return 1
+    
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
+def cmd_decide(args, repo_root: Path, config, logger) -> int:
+    """Create decision memo for portfolio action"""
+    print("Creating decision memo...")
+    print()
+    
+    # Resolve snapshot path
+    if hasattr(args, 'snapshot') and args.snapshot:
+        snapshot_path = Path(args.snapshot)
+        if not snapshot_path.is_absolute():
+            snapshot_path = repo_root / snapshot_path
+    else:
+        # Default to portfolio/latest.json
+        snapshot_path = repo_root / 'portfolio' / 'latest.json'
+        if not snapshot_path.exists():
+            # Try to find latest snapshot
+            snapshots_dir = repo_root / config.snapshots_dir
+            snapshot_files = sorted([
+                p for p in snapshots_dir.glob('*.json')
+                if p.name != 'latest.json'
+            ])
+            if snapshot_files:
+                snapshot_path = snapshot_files[-1]
+            else:
+                print("✗ No portfolio snapshots found", file=sys.stderr)
+                logger.failure("No snapshots available")
+                return 1
+    
+    # Parse lenses
+    if hasattr(args, 'lens') and args.lens:
+        if args.lens == 'all':
+            lenses = ['marks', 'munger', 'klarman']
+        else:
+            lenses = [args.lens]
+    else:
+        lenses = ['marks', 'munger', 'klarman']
+    
+    # Get action
+    action = args.action if hasattr(args, 'action') and args.action else 'hold'
+    
+    # Get other params
+    isin = args.isin if hasattr(args, 'isin') and args.isin else None
+    name = args.name if hasattr(args, 'name') and args.name else None
+    notes = args.notes if hasattr(args, 'notes') and args.notes else None
+    emit_template_only = args.emit_template_only if hasattr(args, 'emit_template_only') else False
+    
+    print(f"Action: {action}")
+    if isin:
+        print(f"ISIN: {isin}")
+    if name:
+        print(f"Name: {name}")
+    print(f"Lenses: {', '.join(lenses)}")
+    print(f"Snapshot: {snapshot_path.name}")
+    print()
+    
+    try:
+        memo, output_path = run_decide(
+            isin=isin,
+            action=action,
+            name=name,
+            notes=notes,
+            snapshot_path=snapshot_path,
+            lenses=lenses,
+            repo_root=repo_root,
+            emit_template_only=emit_template_only
+        )
+        
+        # Print summary
+        print("✓ Decision memo created!")
+        print()
+        
+        rel_path = output_path.relative_to(repo_root)
+        print(f"Output: {rel_path}")
+        print()
+        
+        print("Next steps:")
+        print(f"  1. Edit {rel_path}")
+        print("  2. Fill in the [TODO] sections with your analysis")
+        print("  3. Make a decision: Proceed / Delay / Reject")
+        print("  4. If proceeding, execute manually (system never auto-executes)")
+        
+        logger.add_path(output_path)
+        logger.set_info('action', action)
+        if isin:
+            logger.set_info('isin', isin)
+        logger.success("Decision memo created")
+        
+        return 0
+    
+    except DecideError as e:
+        print(f"\n✗ Error: {e}", file=sys.stderr)
+        logger.failure(f"Decide error: {e}")
+        return 1
+    
+    except Exception as e:
+        print(f"\nUnexpected error: {e}", file=sys.stderr)
+        logger.failure(f"Unexpected error: {e}")
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main CLI entrypoint"""
     if argv is None:
@@ -595,6 +807,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     explain_parser.add_argument('--strict', action='store_true', help='Fail if any holding lacks market_value')
     explain_parser.add_argument('--top', type=int, default=10, help='Number of top drivers to show in console (default: 10)')
     
+    # summarize command
+    subparsers.add_parser('summarize', help='Create portfolio state summary')
+    
+    # ask command
+    ask_parser = subparsers.add_parser('ask', help='Ask portfolio question')
+    ask_parser.add_argument('question', help='Question to ask about portfolio')
+    
+    # decide command
+    decide_parser = subparsers.add_parser('decide', help='Create decision memo')
+    decide_parser.add_argument('--isin', help='Security ISIN')
+    decide_parser.add_argument('--action', choices=VALID_ACTIONS, default='hold', 
+                               help='Decision action (default: hold)')
+    decide_parser.add_argument('--name', help='Name for new positions')
+    decide_parser.add_argument('--notes', help='Context notes for decision')
+    decide_parser.add_argument('--snapshot', help='Portfolio snapshot (default: portfolio/latest.json)')
+    decide_parser.add_argument('--lens', choices=['marks', 'munger', 'klarman', 'all'], default='all',
+                               help='Investor lens to apply (default: all)')
+    decide_parser.add_argument('--emit-template-only', action='store_true',
+                               help='Create template without analysis')
+    
     # scaffold command with subcommands
     scaffold_parser = subparsers.add_parser('scaffold', help='Create templates')
     scaffold_subparsers = scaffold_parser.add_subparsers(dest='scaffold_type', help='Template type')
@@ -634,6 +866,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             return cmd_value(args, repo_root, config, logger)
         elif args.command == 'explain':
             return cmd_explain(args, repo_root, config, logger)
+        elif args.command == 'summarize':
+            return cmd_summarize(args, repo_root, config, logger)
+        elif args.command == 'ask':
+            return cmd_ask(args, repo_root, config, logger)
+        elif args.command == 'decide':
+            return cmd_decide(args, repo_root, config, logger)
         elif args.command == 'ingest':
             return cmd_ingest(args, repo_root, config, logger)
         elif args.command == 'scaffold':

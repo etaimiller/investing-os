@@ -185,6 +185,124 @@ Explain portfolio changes between two snapshots:
 
 **Deterministic**: Same inputs produce identical attribution (excluding timestamps/report IDs).
 
+#### `investos summarize`
+Create portfolio state summary from latest snapshot:
+```bash
+./bin/investos summarize
+```
+
+**What it does**:
+1. Loads most recent portfolio snapshot
+2. Computes portfolio facts (totals, holdings, types, concentration)
+3. Optionally includes recent changes from explanation files
+4. Writes deterministic summary to `analysis/state/summary.json`
+
+**Outputs**:
+- `analysis/state/summary.json` - Structured portfolio facts
+- `analysis/state/latest.json` - Pointer to latest snapshot
+
+**Use this before**: Asking portfolio questions with `investos ask`
+
+**Facts only**: No opinions, valuations, or assumptions. Just portfolio state.
+
+#### `investos ask`
+Ask questions about portfolio using investor lenses:
+```bash
+# General questions
+./bin/investos ask "What should I pay attention to?"
+./bin/investos ask "Where is my biggest risk?"
+
+# Risk-focused (Marks lens)
+./bin/investos ask "What would Howard Marks worry about?"
+./bin/investos ask "Where could I lose money permanently?"
+
+# Understanding-focused (Munger lens)  
+./bin/investos ask "Do I really understand these businesses?"
+./bin/investos ask "Where are my psychological blind spots?"
+
+# Value-focused (Klarman lens)
+./bin/investos ask "Where is my margin of safety?"
+./bin/investos ask "Am I investing or speculating?"
+```
+
+**What it does**:
+1. Loads portfolio summary from `analysis/state/summary.json`
+2. Selects relevant investor lenses (Marks, Munger, Klarman)
+3. Generates structured markdown analysis with:
+   - Observations (facts from summary)
+   - Risks to consider
+   - Open questions
+   - What deserves attention
+4. Saves full analysis to `analysis/answers/<timestamp>_<slug>.md`
+5. Prints summary to console
+
+**Investor Lenses**:
+- **Marks**: Risk, cycles, what's priced in, concentration
+- **Munger**: Understanding, incentives, moats, psychology
+- **Klarman**: Margin of safety, value discipline, catalysts
+
+**No external data**: Works entirely from local portfolio snapshot. No APIs, no market data.
+
+**See**: `analysis/README.md` for detailed documentation
+
+#### `investos decide`
+Create structured decision memos for portfolio actions:
+```bash
+# Review existing holding
+./bin/investos decide --isin US0378331005
+
+# Consider adding to position
+./bin/investos decide --isin US0378331005 --action add
+
+# Consider new position
+./bin/investos decide --action new --name "Apple Inc." --isin US0378331005
+
+# Consider trimming position
+./bin/investos decide --isin IE00B4L5Y983 --action trim \
+  --notes "Position grew to 20% via appreciation"
+
+# Consider exiting
+./bin/investos decide --isin US6541061031 --action exit
+
+# Use specific lens
+./bin/investos decide --isin US0846707026 --lens klarman
+
+# Create template only (no analysis)
+./bin/investos decide --isin US5949181045 --emit-template-only
+```
+
+**Actions:**
+- `new` - Initiating new position
+- `add` - Adding to existing position
+- `trim` - Reducing position size
+- `exit` - Closing position
+- `hold` - Review current position (default)
+
+**What it does**:
+1. Loads portfolio snapshot and summary
+2. Extracts position context (weight, concentration)
+3. Applies investor lenses (Marks/Munger/Klarman)
+4. Generates structured markdown memo with:
+   - Decision framing (facts only)
+   - Portfolio context
+   - Lens-based analysis prompts
+   - Disconfirming evidence section
+   - Alternatives considered
+   - Decision status checkboxes
+   - Follow-up triggers
+
+**Outputs**:
+- `decisions/YYYY-MM-DD_<isin>_<action>.md` - Decision memo template
+
+**Design principles**:
+- No recommendations (structures thinking, doesn't decide)
+- Facts vs. judgment clearly separated
+- "Do nothing" as explicit choice
+- All reasoning captured in durable files
+- Never auto-executes trades
+
+**See**: `decisions/README.md` for complete decision workflow
+
 #### `investos ingest`
 Ingest Trade Republic portfolio PDF:
 ```bash

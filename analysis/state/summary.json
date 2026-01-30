@@ -1,0 +1,175 @@
+{
+  "generated_at": "2026-01-29T06:16:19.292530Z",
+  "summary_version": "1.0.0",
+  "snapshot": {
+    "snapshot_id": "2026-01-26-224637",
+    "timestamp": "2026-01-26T22:46:37.537581+00:00",
+    "source_file": "2026-01-26-224637.json"
+  },
+  "portfolio_totals": {
+    "total_portfolio_value": 193666.76,
+    "total_cash": 0,
+    "base_currency": "EUR"
+  },
+  "holdings_count": {
+    "total": 14,
+    "with_market_value": 14
+  },
+  "top_holdings": [
+    {
+      "name": "iShsIV-EO Ultrashort Bd U.ETF Registered Shares o.N.",
+      "isin": "IE00BCRY6557",
+      "market_value": 39666.29,
+      "weight_pct": 20.48,
+      "type": "ETF"
+    },
+    {
+      "name": "iShs IV-iShs MSCI India UC.ETF Registered Shares o.N.",
+      "isin": "IE00BZCQB185",
+      "market_value": 20782.16,
+      "weight_pct": 10.73,
+      "type": "ETF"
+    },
+    {
+      "name": "Fairfax Finl Holdings Ltd. Reg. Shares (Sub. Vtg) o.N.",
+      "isin": "CA3039011026",
+      "market_value": 19582.78,
+      "weight_pct": 10.11,
+      "type": "Stock"
+    },
+    {
+      "name": "Berkshire Hathaway Inc. Reg.Shares B New DL -,00333",
+      "isin": "US0846707026",
+      "market_value": 19567.91,
+      "weight_pct": 10.1,
+      "type": "Stock"
+    },
+    {
+      "name": "InvescoMI S&P 500 ETF Registered Shares Acc o.N.",
+      "isin": "IE00B3YCGJ38",
+      "market_value": 18823.18,
+      "weight_pct": 9.72,
+      "type": "ETF"
+    }
+  ],
+  "security_type_breakdown": {
+    "ETF": {
+      "count": 5,
+      "market_value": 97322.07,
+      "weight_pct": 50.25
+    },
+    "Stock": {
+      "count": 9,
+      "market_value": 96344.69000000002,
+      "weight_pct": 49.75
+    }
+  },
+  "concentration": {
+    "holdings_over_10pct": 4,
+    "flags": [
+      {
+        "name": "iShsIV-EO Ultrashort Bd U.ETF Registered Shares o.N.",
+        "isin": "IE00BCRY6557",
+        "weight_pct": 20.48,
+        "market_value": 39666.29
+      },
+      {
+        "name": "iShs IV-iShs MSCI India UC.ETF Registered Shares o.N.",
+        "isin": "IE00BZCQB185",
+        "weight_pct": 10.73,
+        "market_value": 20782.16
+      },
+      {
+        "name": "Fairfax Finl Holdings Ltd. Reg. Shares (Sub. Vtg) o.N.",
+        "isin": "CA3039011026",
+        "weight_pct": 10.11,
+        "market_value": 19582.78
+      },
+      {
+        "name": "Berkshire Hathaway Inc. Reg.Shares B New DL -,00333",
+        "isin": "US0846707026",
+        "weight_pct": 10.1,
+        "market_value": 19567.91
+      }
+    ]
+  },
+  "recent_changes": {
+    "explanation_available": true,
+    "from_snapshot": null,
+    "to_snapshot": null,
+    "delta_abs": 5000.0,
+    "delta_pct": 0.21551724137931033,
+    "top_drivers": [
+      {
+        "type": "new_position",
+        "account_id": "test-001",
+        "isin": "DE0005140008",
+        "name": "Deutsche Bank AG",
+        "contribution_abs": 2800.0,
+        "details": {
+          "mv_B": 2800.0,
+          "notes": "New position opened"
+        },
+        "contribution_pct_of_portfolio_delta": 0.56
+      },
+      {
+        "type": "price_change",
+        "account_id": "test-001",
+        "isin": "US0378331005",
+        "name": "Apple Inc.",
+        "contribution_abs": 1800.0,
+        "details": {
+          "quantity_A": 100,
+          "quantity_B": 100,
+          "mv_A": 18000.0,
+          "mv_B": 19800.0,
+          "notes": "Quantity unchanged, value changed (price effect)"
+        },
+        "contribution_pct_of_portfolio_delta": 0.36
+      },
+      {
+        "type": "quantity_change",
+        "account_id": "test-001",
+        "isin": "IE00B4L5Y983",
+        "name": "iShares Core MSCI World UCITS ETF",
+        "contribution_abs": 900.0,
+        "details": {
+          "quantity_A": 50,
+          "quantity_B": 60,
+          "quantity_delta": 10,
+          "mv_A": 4200.0,
+          "mv_B": 5100.0,
+          "notes": "Quantity changed by +10.0000 shares"
+        },
+        "contribution_pct_of_portfolio_delta": 0.18
+      },
+      {
+        "type": "cash_change",
+        "account_id": "test-001",
+        "currency": "EUR",
+        "contribution_abs": -500.0,
+        "details": {
+          "amount_A": 1000.0,
+          "amount_B": 500.0,
+          "delta": -500.0,
+          "notes": "Cash decreased by 500.00 EUR"
+        },
+        "contribution_pct_of_portfolio_delta": -0.1
+      },
+      {
+        "type": "residual_unexplained",
+        "contribution_abs": 0.0,
+        "details": {
+          "explained_sum": 5000.0,
+          "portfolio_delta": 5000.0,
+          "notes": "Unexplained residual (rounding, fees, timing, etc.)"
+        },
+        "contribution_pct_of_portfolio_delta": 0.0
+      }
+    ]
+  },
+  "data_quality": {
+    "holdings_without_market_value": 0,
+    "snapshot_validation": "not_checked"
+  }
+}

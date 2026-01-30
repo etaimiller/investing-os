@@ -19,6 +19,11 @@
   "monitoring": {
     "watch_rules_file": "monitoring/watch_rules.yaml"
   },
+  "analysis": {
+    "state_dir": "analysis/state",
+    "lenses_dir": "analysis/lenses",
+    "answers_dir": "analysis/answers"
+  },
   "logs": {
     "runs_dir": "logs/runs"
   },
